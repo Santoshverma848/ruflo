@@ -230,4 +230,13 @@ describe('keys and colour depth', () => {
     expect(depthOf({ TERM: 'xterm-256color' })).toBe('256')
     expect(depthOf({ TERM: 'xterm', COLORTERM: 'truecolor' })).toBe('truecolor')
   })
+
+  it('keeps colour on Windows, where TERM is unset in Windows Terminal, PowerShell and cmd', () => {
+    expect(depthOf({ OS: 'Windows_NT' })).toBe('256')
+    expect(depthOf({ OS: 'Windows_NT', TERM: '' })).toBe('256')
+    expect(depthOf({ OS: 'Windows_NT', COLORTERM: 'truecolor' })).toBe('truecolor')
+    expect(depthOf({ OS: 'Windows_NT', TERM: 'dumb' })).toBe('none')
+    expect(depthOf({ OS: 'Windows_NT', NO_COLOR: '1', COLORTERM: 'truecolor' })).toBe('none')
+    expect(depthOf({ COLORTERM: 'truecolor' })).toBe('none')
+  })
 })

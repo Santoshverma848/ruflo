@@ -5,6 +5,9 @@
  * (data/activity-store.ts Prefs) which go through hooks/activity-live.ts.
  */
 import { isoOf } from './data/safe'
+import { plain } from './data/parse'
+import { writeFlavorReady } from './data/write-flavor'
+import { emptyFiles } from './data/write-via'
 import { activityOf, clearMemory, markPrefsDirty, pathsOf, seqOf, takeRing } from './activity-live'
 import { MAX_PINS, MAX_RULES, MAX_SEARCHES, type Pin } from './data/activity-store'
 import { exportSpecFor, eventsText, formatOf } from './data/event-export'
@@ -450,24 +453,45 @@ export function eventsActions(state: State, host: Host, invalidate: () => void, 
     },
     forget: () => {
       const paths = pathsOf(state.cwd)
+      const label = 'forget the Events and Timeline history'
+      const forgotten = () => {
+        clearMemory(state)
+        say(ui, 'history forgotten')
+      }
 
-      askSpec(
-        {
-          label: 'forget the Events and Timeline history',
-          args: [],
-          argv: ['rm', '-f', '--', paths.events, paths.lanes],
-          expect: 'events.jsonl and lanes.jsonl removed',
-          declared: 'delete',
-          shows: `rm -f -- ${paths.events} ${paths.lanes}`,
-          note: 'deletes only the console\'s own history files for this project; saved searches, pins and rules stay',
-          timeoutMs: 10_000,
-          onOutput: () => {
-            clearMemory(state)
-            say(ui, 'history forgotten')
-          },
-          verifyLocal: async h => (await h.fs.stat(paths.events).catch(() => undefined)) === undefined,
-        },
-        'that cannot run here',
+      void writeFlavorReady().then(flavor =>
+        askSpec(
+          flavor === 'host-fs'
+            ? {
+                // Windows has no rm here: each history file is emptied through the host's file API instead.
+                label,
+                args: [],
+                expect: 'events.jsonl and lanes.jsonl emptied',
+                declared: 'delete',
+                shows: `empty ${paths.events} and ${paths.lanes} (no delete on Windows: the files stay, with no history in them)`,
+                note: 'empties only the console\'s own history files for this project; saved searches, pins and rules stay',
+                run: async () => {
+                  const problem = await emptyFiles(host, [paths.events, paths.lanes])
+
+                  if (problem === null) forgotten()
+
+                  return { label, ok: problem === null, detail: problem === null ? 'events.jsonl and lanes.jsonl emptied' : `the write failed: ${plain(problem, 120)}` }
+                },
+              }
+            : {
+                label,
+                args: [],
+                argv: ['rm', '-f', '--', paths.events, paths.lanes],
+                expect: 'events.jsonl and lanes.jsonl removed',
+                declared: 'delete',
+                shows: `rm -f -- ${paths.events} ${paths.lanes}`,
+                note: 'deletes only the console\'s own history files for this project; saved searches, pins and rules stay',
+                timeoutMs: 10_000,
+                onOutput: forgotten,
+                verifyLocal: async h => (await h.fs.stat(paths.events).catch(() => undefined)) === undefined,
+              },
+          'that cannot run here',
+        ),
       )
     },
     ask: event => askClaude(`This event appeared in my ruflo console: "${maskLine(event.text, 200)}" (kind ${event.kind}, level ${levelOfEvent(event)}). What does it mean, and should I do anything?`),

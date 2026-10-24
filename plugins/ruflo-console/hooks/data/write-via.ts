@@ -75,6 +75,22 @@ export function argvOf(flavor: Exclude<WriteFlavor, 'host-fs'>, op: WriteOp): re
   }
 }
 
+/**
+ * "Forget" on Windows (host-fs), which has no delete: each of `paths` that is there is replaced by `text` (empty by default). A file that
+ * is not there is left alone, so nothing is created. Resolves to the first refusal's reason, or null when every file took it.
+ */
+export async function emptyFiles(host: WriteHost, paths: readonly string[], text = ''): Promise<string | null> {
+  for (const path of paths) {
+    if ((await host.fs.stat(path).catch(() => undefined)) === undefined) continue
+
+    const done = await writeVia('host-fs', host, { kind: 'replace', path, text, hasDir: true })
+
+    if (done.exitCode !== 0) return done.stderr.trim() !== '' ? done.stderr.trim() : `the write exited ${done.exitCode}`
+  }
+
+  return null
+}
+
 /** Carries out one write, the way the machine's flavor says. */
 export async function writeVia(flavor: WriteFlavor, host: WriteHost, op: WriteOp): Promise<WriteResult> {
   if (flavor !== 'host-fs') return host.run(argvOf(flavor, op), op.timeoutMs ?? 10_000, op.text)
