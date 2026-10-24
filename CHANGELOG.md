@@ -5,6 +5,25 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.62.0] - 2026-10-24
+
+Minor release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.62.0. Adds one MCP tool (`rure_cuda_launch_plan`). No leaf package changed, so no standalone publishes.
+
+### Added
+
+- **ruRE: CUDA launch plan** (ruflo-rure 0.6.0, ADR-501). New read-only MCP tool `rure_cuda_launch_plan` turns what `rure_analyze_cuda` found into a plan for measuring: per architecture and kernel, how many blocks and warps fit on one multiprocessor at each block size, which resource sets the limit (registers, shared memory, warps, block slots, barriers), the best block sizes and flags. Eight architectures have a table (`sm_70` to `sm_120`); any other gets no figure rather than a guess. It still parses and never runs: `includeHarness` only returns the text of a small CUDA program for you to build and run yourself. The occupancy model matches NVIDIA's `cuda_occupancy.h` on 1.77 million combinations and the CUDA driver on five real GPUs (ADR-501, ADR-500).
+
+### Fixed
+
+- `rure_analyze_cuda` reported the wrong architecture (`sm_5`) for a standalone `.cubin` built with CUDA 12 for `sm_70` to `sm_90`; the SM number sits in a different byte depending on the cubin's OS ABI. Cubins inside a fatbin or host binary were not affected.
+- The worker daemon let a `maxConcurrent` or `workerTimeoutMs` saved in `daemon-state.json` override the same setting in `config.json`; an explicit value now wins (constructor, then config file, then saved state, then default) (#4462).
+- Cancelling a headless worker now settles its execution and escalates to SIGKILL when the child ignores SIGTERM; the fallback timer no longer keeps the host alive, and a timed-out child no longer gets a second SIGTERM (#4463).
+
+### Notes
+
+- Plugins in this tree that changed: `ruflo-rure` 0.6.0, `ruflo-ai-team` 0.3.4, `ruflo-browser` 0.3.7 (doctor path from other working directories), `ruflo-x-gateway` 0.10.2. The x.ruv.io gateway itself (0.9.1) is a separate deployment.
+- `@claude-flow/swarm` changes (#4456, #4457) are not a CLI dependency and are not part of this release.
+
 ## [3.61.1] - 2026-10-24
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.61.1. No leaf package changed, so no standalone publishes.
