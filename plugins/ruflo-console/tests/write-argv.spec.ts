@@ -186,7 +186,8 @@ describe('the POSIX argv (macOS, BSD): a fixed set of constant scripts, the path
   })
 })
 
-describe('the POSIX scripts on a real disk (sh and dd as this machine has them)', () => {
+// Windows writes through the host file API (host-fs), never these scripts; NTFS has no mode bits or FIFOs to check them against.
+describe.skipIf(process.platform === 'win32')('the POSIX scripts on a real disk (sh and dd as this machine has them)', () => {
   let dir = ''
 
   afterEach(() => {

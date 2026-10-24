@@ -2,6 +2,14 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.47.2 — 2026-10-24
+- fix: **forget history** (Events) and **forget saved views** (Workflows) work on Windows. They ran `rm -f`, which Windows does not have; there the files are emptied through the host file API (saved views as a valid empty document) and the result is verified by what the file holds. Linux and macOS are unchanged.
+- fix: ADR status changes on records with CRLF line endings (git autocrlf on Windows). A MADR record failed with "the front matter is not closed", and other formats got mixed endings; records are now edited as LF text and written back with their own endings.
+- fix: the standalone terminal (`ruflo tui`) draws in colour on Windows. It treated an unset `TERM` as "no terminal", but Windows Terminal, PowerShell and cmd leave `TERM` unset; only `TERM=dumb` or `NO_COLOR` turn colour off there.
+- fix: the Conversation board finds codex on Windows with `where` (there is no `which`).
+- fix: mission spend works on Windows (needs ruflo-cost-tracker 0.28.3, which fixes the ledger script itself).
+- chore: the real-disk POSIX write specs (modes, FIFOs) are skipped on Windows, which writes through the host file API; one `ruflo tui --plain` spec no longer needs a runnable fake codex there.
+
 ## 0.47.1 — 2026-10-24
 - fix: the Plugin Catalog reads the marketplace clone on Windows. The clone's location is a drive path (`C:\Users\…\marketplaces\ruflo`), and the catalog refused anything not starting with `/`, so it said "the clone's marketplace.json is not readable" while the file was there. The catalog, each plugin's folder, and the plugins view's freshness row now use the shared path helpers (`paths.ts`).
 

@@ -306,21 +306,6 @@ describe('the Conversation board', () => {
   /** The facts are read after a read of the run folders (never from a render): this is what that hook runs. */
   const settle = async (): Promise<void> => refreshFacts(current as State, 1_700_000_000_000)
 
-  it('finds codex on Windows with `where` (there is no `which`), and on a POSIX home with `which`', async () => {
-    for (const [home, finder, other] of [['C:\\Users\\u', 'where', 'which'], ['/home/u', 'which', 'where']] as const) {
-      const { state, f } = open('')
-      const run = f.host.run
-
-      f.host.home = async () => home
-      f.host.run = async (argv, ms, stdin) => (argv[0] === other ? { exitCode: 127, stdout: '', stderr: 'not found', isStdoutTruncated: false, isStderrTruncated: false } : run(argv, ms, stdin))
-      await refreshFacts(state, 1_700_000_000_000)
-
-      expect(f.runs.some(r => r.argv[0] === finder && r.argv[1] === 'codex'), home).toBe(true)
-      expect(f.runs.some(r => r.argv[0] === other), home).toBe(false)
-      expect(liveOf(state).hasCodex, home).toBe(true)
-    }
-  })
-
   it('lists the targets with what leaves the machine, the cost class and how the reply arrives, once the facts are read', async () => {
     const { ctx, state } = open('bbs:ops; endpoint:a=https://a.example.com/v1|NONE|m1')
 

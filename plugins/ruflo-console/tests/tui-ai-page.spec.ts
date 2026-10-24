@@ -305,7 +305,8 @@ describe('the page', () => {
     const io = (): TuiIO => ({ stdin: { on: () => undefined, off: () => undefined, resume: () => undefined, pause: () => undefined }, stdout: { columns: 100, rows: 30, write: text => void out.push(text) }, stderr: { write: () => undefined }, env: {} })
 
     expect(await runTui({ look: 'plain', fps: 0, cwd: project, home: root, plain: true, view: 'ai', aiPage: { codexBin: FAKE } }, io())).toBe(0)
-    expect(out.join('')).toMatch(/codex .*ready|codex .*pinned/)
+    // The fake codex is a script with a shebang, which Windows cannot run: there the page can only say it is not ready.
+    expect(out.join('')).toMatch(isWin ? /codex/ : /codex .*ready|codex .*pinned/)
     expect(out.join('')).toContain('openrouter')
     expect(out.join('')).not.toContain(KEY)
     out.length = 0
