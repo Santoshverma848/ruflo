@@ -29,6 +29,7 @@ import { parseMissions, type MissionObservation } from './missions'
 import { readBounded, readDisk, textOf, type ProjectKey, type Read, type ReadCache, type ReaderFs } from './files'
 import { parseAgentdbMod, type AgentdbMod } from './agentdb-mod'
 import { readMods, type ModsFacts } from './mods'
+import { joinPath } from './paths'
 import {
   parseAgents,
   parseClaims,
@@ -110,7 +111,7 @@ export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, 
     stored ?? (pointer !== null ? { id: pointer.id, topology: pointer.topology ?? 'unknown', status: pointer.status ?? 'unknown', agentIds: [], ...(pointer.strategy !== undefined && { strategy: pointer.strategy }) } : null)
   const markets = parseMarketplaces(textOf(disk.home.marketplaces))
   const location = markets?.find(market => market.name === RUFLO_MARKET)?.location
-  const offered = location === undefined ? null : parseMarketplaceManifest(textOf(await readBounded(fs, cache, `${location}/.claude-plugin/marketplace.json`)))
+  const offered = location === undefined ? null : parseMarketplaceManifest(textOf(await readBounded(fs, cache, joinPath(location, '.claude-plugin', 'marketplace.json'))))
   const reads = Object.fromEntries((Object.keys(disk.project) as ProjectKey[]).map(key => [key, statusOf(disk.project[key])])) as Snapshot['reads']
 
   return {

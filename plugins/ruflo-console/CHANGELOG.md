@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.47.1 — 2026-10-24
+- fix: the Plugin Catalog reads the marketplace clone on Windows. The clone's location is a drive path (`C:\Users\…\marketplaces\ruflo`), and the catalog refused anything not starting with `/`, so it said "the clone's marketplace.json is not readable" while the file was there. The catalog, each plugin's folder, and the plugins view's freshness row now use the shared path helpers (`paths.ts`).
+
 ## 0.47.0 — 2026-10-23
 - feat: a **CUDA** row on the ruRE page (ADR-497) for the new `rure_analyze_cuda` tool: for a CUDA program, a `.cubin`, a `.fatbin` or a `.ptx` it shows the fatbin entries (kind, target `sm_NN`, compression), each kernel with its register count, code size and constant/shared memory, and the PTX version, target and kernel names. Needs a ruflo CLI that has the tool (the release after 3.60.1); on an older one the row says to update, as the other ruRE rows do.
 - feat: DETECT sends `.cubin`, `.fatbin` and `.ptx` files to the CUDA row, and the native-binary row says "holds CUDA code" for a program with a `.nv_fatbin` section, pointing at it.
