@@ -8,6 +8,7 @@ Newest first. One `## <version> — <date>` heading per version, then `feat:`, `
 - fix: the standalone terminal (`ruflo tui`) draws in colour on Windows. It treated an unset `TERM` as "no terminal", but Windows Terminal, PowerShell and cmd leave `TERM` unset; only `TERM=dumb` or `NO_COLOR` turn colour off there.
 - fix: the Conversation board finds codex on Windows with `where` (there is no `which`).
 - fix: mission spend works on Windows (needs ruflo-cost-tracker 0.28.3, which fixes the ledger script itself).
+- fix: the autopilot's text checks know Windows (groundwork: a start is still refused there). A task naming `C:\…`, `\\share\…`, `..\…`, `%USERPROFILE%\…` or `$env:USERPROFILE\…` is checked against the envelope folders; `rmdir /s`, `del C:\`, `format C:`, `Remove-Item -Recurse` and `rm -rf C:\` are hard denies; a verify command may not be `cmd`, `powershell`, `pwsh`, `wsl`, `bash.exe` and the like, by basename under either separator and without `.exe`. These only park or refuse more.
 - chore: the real-disk POSIX write specs (modes, FIFOs) are skipped on Windows, which writes through the host file API; one `ruflo tui --plain` spec no longer needs a runnable fake codex there.
 
 ## 0.47.1 — 2026-10-24

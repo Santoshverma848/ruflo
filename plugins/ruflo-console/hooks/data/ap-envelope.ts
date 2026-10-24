@@ -21,7 +21,8 @@ export const DENY_PATTERNS: readonly [HardDeny, RegExp][] = [
   ['deploy', /\b(deploy(s|ed|ing)?\b|gcloud\s+run\s+deploy|firebase\s+deploy|kubectl\s+apply|terraform\s+apply)/i],
   ['force-push', /(push\s+(--force|-f\b|--force-with-lease)|force[- ]push)/i],
   ['secret-access', /\b(api[_ -]?key|secret|credential|password|private\s+key|\.env\b|gcloud\s+secrets|token)\b/i],
-  ['delete-outside-worktree', /\b(rm\s+-rf?\s+(\/|~|\$HOME)|delete\s+(the\s+)?(home|root|\/)|drop\s+database|mkfs|dd\s+of=\/dev)/i],
+  // The second line is the Windows forms: cmd's `rmdir /s`, `del C:\`, `format C:`, PowerShell's `Remove-Item -Recurse`, and rm on a drive or a variable.
+  ['delete-outside-worktree', /\b(rm\s+-rf?\s+(\/|~|\$HOME)|delete\s+(the\s+)?(home|root|\/)|drop\s+database|mkfs|dd\s+of=\/dev|(rmdir|rd)\s+\/s\b|(del|erase)\s+(\/[a-z]+\s+)*[A-Za-z]:[\\/]|format\s+[A-Za-z]:|Remove-Item\b[^\n]{0,120}-Recurse|rm\s+-rf?\s+([A-Za-z]:|%|\$env:))/i],
   ['envelope-edit', /\b(autopilot\s+(envelope|scope|settings)|widen\s+(the\s+)?(envelope|scope)|raise\s+(the\s+)?(spend|budget)\s+(cap|ceiling)|grant\s+(itself|autopilot))|\.claude-flow\/(console\/autopilot|protector-mod)|autopilot\/(envelope|journal|kill)|protector-mod|\b(clear|remove|delete|rm|unset|touch)\b[^\n]{0,40}\bkill\s*(flag|switch|file)\b/i],
 ]
 
@@ -38,13 +39,16 @@ export const isProtectedPath = (path: string): boolean => {
 
 /** Programs a verify command may not run: shells and wrappers (they turn an argv into a shell line), privilege and network tools, and destructive ones. */
 const VERIFY_BANNED = new Set(['sh', 'bash', 'zsh', 'dash', 'fish', 'ksh', 'csh', 'tcsh', 'env', 'xargs', 'sudo', 'doas', 'su', 'eval', 'exec', 'nohup', 'setsid', 'timeout', 'time', 'watch', 'rm', 'rmdir', 'dd', 'mkfs', 'shred', 'chmod', 'chown', 'mv', 'ln', 'curl', 'wget', 'nc', 'ncat', 'socat', 'ssh', 'scp', 'sftp', 'rsync', 'ftp', 'telnet', 'python', 'python3', 'perl', 'ruby', 'php', 'osascript', 'crontab', 'systemctl', 'kill', 'pkill', 'killall', 'tee', 'cp', 'install', 'truncate'])
+/** The same for Windows (an argv starts a program, never a cmd builtin like del or move, so cmd itself is what is banned): its shells and script hosts, and the tools that delete, copy, fetch or change the system. */
+const WINDOWS_BANNED = new Set(['cmd', 'powershell', 'pwsh', 'wsl', 'wscript', 'cscript', 'mshta', 'rundll32', 'regsvr32', 'conhost', 'invoke-expression', 'iex', 'format', 'diskpart', 'reg', 'regedit', 'taskkill', 'takeown', 'icacls', 'cacls', 'attrib', 'certutil', 'bitsadmin', 'schtasks', 'sc', 'net', 'netsh', 'runas', 'msiexec', 'robocopy', 'xcopy'])
 const hasCmdSubstitution = (part: string): boolean => /[`\n]|\$\(|;|&&|\|\||\|/.test(part)
 
 /** Why a verify argv is refused, or null. The program is its basename; a shell metacharacter in any part, a banned program or a hard-deny word refuses it. */
 export function verifyProblem(argv: readonly string[]): string | null {
-  const program = (argv[0] ?? '').split('/').at(-1)?.toLowerCase() ?? ''
+  // The basename under either separator, without a Windows executable suffix: `C:\Windows\System32\cmd.exe` is `cmd`, `bash.exe` is `bash`.
+  const program = (argv[0] ?? '').split(/[\\/]/).at(-1)?.toLowerCase().replace(/\.(exe|com|cmd|bat|ps1)$/, '') ?? ''
 
-  if (VERIFY_BANNED.has(program)) return `"${program.slice(0, 20)}" is a shell, a wrapper or a destructive or network tool and cannot be a verify command`
+  if (VERIFY_BANNED.has(program) || WINDOWS_BANNED.has(program)) return `"${program.slice(0, 20)}" is a shell, a wrapper or a destructive or network tool and cannot be a verify command`
   if (argv.some(hasCmdSubstitution)) return 'a verify part holds a shell metacharacter (; | & ` $( newline): give a program and its arguments only'
 
   const joined = argv.join(' ')
