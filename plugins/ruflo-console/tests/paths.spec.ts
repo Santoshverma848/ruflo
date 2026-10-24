@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { isProtectedPath, validateEnvelope } from '../hooks/data/ap-envelope'
-import { below, hasParentSegment, isAbsolutePath, joinPath, normalizePath, samePath, trimTrailing } from '../hooks/data/paths'
+import { below, hasParentSegment, isAbsolutePath, joinPath, normalizePath, samePath, tailOf, trimTrailing } from '../hooks/data/paths'
 
 describe('paths', () => {
   it('absolute forms', () => {
@@ -77,5 +77,12 @@ describe('paths', () => {
     expect(samePath('\\\\srv\\share\\x', '//srv/share/x')).toBe(true)
     expect(samePath('\\\\srv\\share\\x', '\\\\SRV\\share\\x\\')).toBe(true)
     expect(samePath('\\\\srv\\share\\x', '\\\\srv\\share\\y')).toBe(false)
+  })
+  it('tailOf names the last folders of a project path under either separator (the overview heading)', () => {
+    expect(tailOf('/work/proj/app')).toBe('proj/app')
+    expect(tailOf('C:\\Users\\x\\proj')).toBe('x/proj')
+    expect(tailOf('C:/Users/x/proj')).toBe('x/proj')
+    expect(tailOf('\\\\srv\\share\\proj')).toBe('share/proj')
+    expect(tailOf('/a/b/c', 1)).toBe('c')
   })
 })

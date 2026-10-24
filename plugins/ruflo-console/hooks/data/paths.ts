@@ -24,6 +24,9 @@ export function joinPath(base: string, ...parts: string[]): string {
   return [trimTrailing(base), ...rest].join(sep)
 }
 
+/** The last `count` segments of a path joined with `/`, for a heading: `/a/b/c` and `C:\a\b\c` both give `b/c`. */
+export const tailOf = (p: string, count = 2): string => p.split(/[\\/]/).slice(-count).join('/')
+
 /** Windows paths compare ignoring case, separator style and a trailing separator; POSIX paths compare exactly. */
 export function samePath(a: string, b: string): boolean {
   if (isWindowsPath(a) || isWindowsPath(b)) {
