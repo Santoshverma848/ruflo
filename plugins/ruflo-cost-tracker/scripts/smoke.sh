@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Structural smoke test for ruflo-cost-tracker v0.28.3.
 set -u
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# `pwd -W` (Git Bash on Windows) gives C:/Users/...; plain pwd gives /c/Users/..., which a Windows node cannot open. Elsewhere -W fails and pwd answers.
+ROOT="$(cd "$(dirname "$0")/.." && { pwd -W 2>/dev/null || pwd; })"
 PASS=0
 FAIL=0
 step() { printf "→ %s ... " "$1"; }

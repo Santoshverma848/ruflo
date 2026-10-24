@@ -126,6 +126,7 @@ function hostOf($: EngineInterface, cwd: string, toasts: { prefs: () => ToastPre
       return homeOf(k => envVars[k])
     },
     configDir: async () => $.env.get('CLAUDE_CONFIG_DIR'),
+    env: async name => $.env.get(name),
     pluginRoot: $.plugin.root,
     // `$.ruflo` exists only where ruflo-mods is seated; validate refuses feature-detecting a noun, so these are
     // async: a missing noun throws inside the promise and every caller's catch sees a rejection.

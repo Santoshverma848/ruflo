@@ -44,6 +44,8 @@ export type Host = {
   settings: () => Promise<unknown>
   home: () => Promise<string | undefined>
   configDir: () => Promise<string | undefined>
+  /** One environment variable of the engine's process, or undefined when unset. Windows has no `printenv`, so a key is read through this there. */
+  env?: (name: string) => Promise<string | undefined>
   /** This plugin's folder: where its own files (the command catalog) are. */
   pluginRoot: string
   rufloSnapshot: () => Promise<RufloSnapshot>

@@ -116,6 +116,8 @@ export function depsOf(state: State): SendDeps | null {
     cwd: state.cwd,
     hive: state.snapshot?.hive ?? null,
     config: live.config,
+    // Windows has no printenv: the engine's own environment read supplies a model key there.
+    ...(host.env !== undefined && live.home !== null && isWindowsPath(live.home) && { readEnv: host.env }),
   }
 }
 

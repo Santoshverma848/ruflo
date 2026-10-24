@@ -10,6 +10,10 @@ Newest first. One `## <version> — <date>` heading per version, then `feat:`, `
 - fix: mission spend works on Windows (needs ruflo-cost-tracker 0.28.3, which fixes the ledger script itself).
 - fix: the autopilot's text checks know Windows (groundwork: a start is still refused there). A task naming `C:\…`, `\\share\…`, `..\…`, `%USERPROFILE%\…` or `$env:USERPROFILE\…` is checked against the envelope folders; `rmdir /s`, `del C:\`, `format C:`, `Remove-Item -Recurse` and `rm -rf C:\` are hard denies; a verify command may not be `cmd`, `powershell`, `pwsh`, `wsl`, `bash.exe` and the like, by basename under either separator and without `.exe`. These only park or refuse more.
 - fix: the Overview heading names the last two folders of a Windows project (`ruflo state in x/proj`), where it printed the whole `C:\…` path because it split on `/` only.
+- fix: stopping or messaging a workflow run on Windows finds its task id in a session transcript over 2 MB. The search used `grep`; Windows now uses PowerShell's `Select-String` (path and pattern passed as base64, never parsed as PowerShell).
+- fix: a model key for an HTTP endpoint is read through the engine's environment read on Windows, which has no `printenv`.
+- fix: a send to a federation peer on Windows says why nothing was sent. The helper is a bash script, and `bash` on a Windows PATH is the WSL launcher, which cannot open a `C:…` path.
+- fix: for a resumed run, the task id from a search is the latest launch, not the first. The search prints matches with no closing brace between them, so the pattern ran across both (any platform).
 - chore: the real-disk POSIX write specs (modes, FIFOs) are skipped on Windows, which writes through the host file API; one `ruflo tui --plain` spec no longer needs a runnable fake codex there.
 
 ## 0.47.1 — 2026-10-24
