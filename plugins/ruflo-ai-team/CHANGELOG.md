@@ -2,6 +2,12 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-ai-team`.
 
+## 0.3.4 — 2026-10-24
+- fix: run and team lists read newest first, so a tenant with more than 100 runs sees its latest runs on the board instead of an arbitrary 100
+- fix: evidence exports query audit events by target instead of reading the first 1000 audit records and filtering, which dropped a run's events once a tenant had more audit history than that
+- fix: the service reports the plugin version (package.json was still 0.1.6, so /health could not tell a deployment apart)
+- chore: Firestore store tests with a limit-after-order double
+
 ## 0.3.3 — 2026-10-22
 - fix: `annotation-review.md` documented only 12 of the 14 live tools, missing `team_board` and `run_complete` (added at 0.2.0/0.2.1) from its readOnly/destructive/idempotent/openWorld classification table
 - chore: smoke now asserts the doc's tool list matches the live server tool set exactly, so this can't silently drift again

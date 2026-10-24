@@ -27,7 +27,7 @@ export class InMemoryStore {
     bucket.runs.set(id, clone(value)); this.#audit(bucket, actor, 'run.created', id); return clone(value);
   }
   async getRun(tenantId, id) { const value = this.#bucket(tenantId).runs.get(id); return value ? clone(value) : null; }
-  async listRuns(tenantId) { return [...this.#bucket(tenantId).runs.values()].map(clone); }
+  async listRuns(tenantId) { return [...this.#bucket(tenantId).runs.values()].reverse().map(clone); }
   async updateRun(tenantId, id, patch, actor = '-') {
     const bucket = this.#bucket(tenantId); const current = bucket.runs.get(id); if (!current) return null;
     const value = { ...current, ...patch, id, updatedAt: now() }; bucket.runs.set(id, clone(value)); this.#audit(bucket, actor, `run.${value.status}`, id); return clone(value);
@@ -78,15 +78,22 @@ export class FirestoreStore {
   #tenant(id) { return this.db.collection('ruflo_ai_team_tenants').doc(id); }
   async #put(tenantId, kind, value) { await this.#tenant(tenantId).collection(kind).doc(value.id).set(value); return clone(value); }
   async #get(tenantId, kind, id) { const snap = await this.#tenant(tenantId).collection(kind).doc(id).get(); return snap.exists ? snap.data() : null; }
-  async #list(tenantId, kind, limit = 1000) { const snap = await this.#tenant(tenantId).collection(kind).limit(limit).get(); return snap.docs.map((d) => d.data()); }
+  async #list(tenantId, kind, limit = 1000, newestFirst = false) {
+    // Firestore returns document-id order without orderBy, so a capped read of a larger
+    // collection would keep an arbitrary slice. Order on createdAt (single-field index)
+    // wherever the cap can bite and recency matters.
+    const col = this.#tenant(tenantId).collection(kind);
+    const snap = await (newestFirst ? col.orderBy('createdAt', 'desc') : col).limit(limit).get();
+    return snap.docs.map((d) => d.data());
+  }
   async #audit(tenantId, actor, eventType, targetId) { const id = randomUUID(); await this.#put(tenantId, 'audit', { id, at: now(), actor, eventType, targetId }); }
   async createTeam(t, i, a='-') { const v={id:`team_${randomUUID()}`,name:i.name,objective:i.objective,roles:i.roles,status:'active',createdAt:now(),updatedAt:now()}; await this.#put(t,'teams',v); await this.#audit(t,a,'team.created',v.id); return v; }
-  async listTeams(t) { return this.#list(t,'teams'); }
+  async listTeams(t) { return this.#list(t,'teams',1000,true); }
   async getTeam(t,id) { return this.#get(t,'teams',id); }
   async updateTeam(t,id,p,a='-') { const c=await this.#get(t,'teams',id); if(!c)return null; const v={...c,...p,id,updatedAt:now()}; await this.#put(t,'teams',v); await this.#audit(t,a,'team.updated',id); return v; }
   async createRun(t,i,a='-') { if(!await this.#get(t,'teams',i.teamId))return null; const v={id:`run_${randomUUID()}`,teamId:i.teamId,objective:i.objective,budgetUnits:i.budgetUnits,spentUnits:0,status:'planned',createdAt:now(),updatedAt:now()}; await this.#put(t,'runs',v); await this.#audit(t,a,'run.created',v.id); return v; }
   async getRun(t,id) { return this.#get(t,'runs',id); }
-  async listRuns(t) { return this.#list(t,'runs',100); }
+  async listRuns(t) { return this.#list(t,'runs',100,true); }
   async updateRun(t,id,p,a='-') { const c=await this.#get(t,'runs',id); if(!c)return null; const v={...c,...p,id,updatedAt:now()}; await this.#put(t,'runs',v); await this.#audit(t,a,`run.${v.status}`,id); return v; }
   async createTask(t,i,a='-') { const run=await this.#get(t,'runs',i.runId); if(!run||run.status==='complete')return null; const v={id:`task_${randomUUID()}`,runId:i.runId,title:i.title,description:i.description,assigneeRole:i.assigneeRole,status:'open',result:null,createdAt:now(),updatedAt:now()}; await this.#put(t,'tasks',v); await this.#audit(t,a,'task.created',v.id); return v; }
   async listTasks(t,runId) { const snap=await this.#tenant(t).collection('tasks').where('runId','==',runId).limit(200).get(); return snap.docs.map(d=>d.data()); }
@@ -94,5 +101,7 @@ export class FirestoreStore {
   async remember(t,i,a='-') { const timestamp=now(); const id=i.key||`mem_${randomUUID()}`; const previous=await this.#get(t,'memories',id); const v={id,teamId:i.teamId,runId:i.runId||null,text:i.text,tags:i.tags||[],provenance:i.provenance||'user',actorHash:a,contentHash:createHash('sha256').update(i.text).digest('hex'),safetyStatus:i.safetyStatus||'accepted',embeddingModel:'feature-hash-256',embeddingVersion:'1',createdAt:previous?.createdAt??timestamp,updatedAt:timestamp}; await this.#put(t,'memories',v); await this.#audit(t,a,'memory.remembered',v.id); return v; }
   async listMemories(t,{teamId}={}) { let query=this.#tenant(t).collection('memories'); if(teamId)query=query.where('teamId','==',teamId); const snap=await query.limit(1000).get(); return snap.docs.map(d=>d.data()); }
   async usage(t) { const [teams,runs,tasks,memories]=await Promise.all(['teams','runs','tasks','memories'].map(k=>this.#list(t,k))); return {teams:teams.length,runs:runs.length,tasks:tasks.length,memories:memories.length,limits:{teams:1,agentsPerTeam:3,monthlyTasks:100,runBudgetUnits:100}}; }
-  async evidence(t,runId) { const run=await this.#get(t,'runs',runId); if(!run)return null; const tasks=await this.listTasks(t,runId); const targets=new Set([runId,run.teamId,...tasks.map(task=>task.id)]); return {schema:'ruflo.ai-team.evidence.v1',generatedAt:now(),run,team:await this.#get(t,'teams',run.teamId),tasks,audit:(await this.#list(t,'audit')).filter(x=>targets.has(x.targetId))}; }
+  async evidence(t,runId) { const run=await this.#get(t,'runs',runId); if(!run)return null; const tasks=await this.listTasks(t,runId); const targets=new Set([runId,run.teamId,...tasks.map(task=>task.id)]); const ids=[...targets]; const chunks=[]; for(let i=0;i<ids.length;i+=30)chunks.push(ids.slice(i,i+30)); // Firestore 'in' takes at most 30 values
+    const audit=(await Promise.all(chunks.map(async c=>(await this.#tenant(t).collection('audit').where('targetId','in',c).limit(1000).get()).docs.map(d=>d.data())))).flat().sort((a,b)=>a.at<b.at?-1:a.at>b.at?1:0);
+    return {schema:'ruflo.ai-team.evidence.v1',generatedAt:now(),run,team:await this.#get(t,'teams',run.teamId),tasks,audit}; }
 }
