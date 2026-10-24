@@ -48,9 +48,9 @@ export function resetDrillIo(): void {
 
 /** True for a path under `<configDir>/projects/` with no `..` part and no NUL: the only place a run's files live. */
 export function isRunFile(path: string, configDir: string | null): boolean {
-  if (configDir === null || path.includes('\0') || path.includes('\n') || path.split('/').includes('..')) return false
+  if (configDir === null || path.includes('\0') || path.includes('\n') || hasParentSegment(path)) return false
 
-  return path.startsWith(`${configDir.replace(/\/+$/, '')}/projects/`)
+  return path.startsWith(`${trimTrailing(configDir)}/projects/`)
 }
 
 /** True for an absolute path inside the project's working directory (where Claude Code puts an agent's worktree), with no `..` part. */

@@ -50,6 +50,20 @@ function fakeIO(isTTY: boolean) {
 }
 
 describe('the same views over real ruflo files', () => {
+  it('the config folder is <home>/.claude when CLAUDE_CONFIG_DIR is not given, so the plugin, marketplace and run reads have somewhere to look', async () => {
+    const session = openSession({ look: 'plain', fps: 0, cwd: project, home: join(root, 'home') })
+
+    await session.refresh()
+    expect(session.state.configDir).toBe(`${join(root, 'home')}/.claude`)
+    session.stop()
+
+    const explicit = openSession({ look: 'plain', fps: 0, cwd: project, home: join(root, 'home'), configDir: join(root, 'elsewhere') })
+
+    await explicit.refresh()
+    expect(explicit.state.configDir).toBe(join(root, 'elsewhere'))
+    explicit.stop()
+  })
+
   it('Overview shows the swarm, the daemon and the helpers read from disk', async () => {
     const session = openSession({ look: 'plain', fps: 0, cwd: project, home: join(root, 'home') })
 

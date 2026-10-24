@@ -33,6 +33,12 @@ beforeAll(() => {
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 
 const settle = (ms = 250) => new Promise(resolve => setTimeout(resolve, ms))
+/** Polls until `done` holds, at most `limit` ms (the assertion that follows says what was missing). */
+const until = async (done: () => boolean, limit = 10_000): Promise<void> => {
+  const end = Date.now() + limit
+
+  while (!done() && Date.now() < end) await settle(50)
+}
 const strip = (text: string) => text.replace(/\u001b\[[0-9;?<]*[A-Za-z]/g, '')
 /** The commands the CLI stand-in was given, minus the console's own background reads (--version, memory stats, doctor …). */
 const ran = (): string[][] => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) : []).filter(argv => argv.some(word => word === 'stop' || (word === 'worker' && argv.includes('list'))))
@@ -92,8 +98,9 @@ describe('a change asked for by name', () => {
     t.press('y')
     // runner.ts re-checks the verify once at VERIFY_RETRY_MS (1 s) when a confirmed action's start
     // succeeded but its state file is not on disk yet (#4036 bullet 2); the stand-in CLI's state
-    // never changes here, so the whole re-check window has to resolve before the verdict is drawn.
-    await settle(1200)
+    // never changes here, so the whole re-check window has to resolve before the verdict is drawn. Wait for the verdict itself, not for a fixed
+    // 1.2 s: under CPU contention (a full parallel run) the 1 s retry plus the redraw outlasts it.
+    await until(() => t.screen().includes('stop the swarm: ruflo answered ok'))
 
     const after = ran().slice(before)
 

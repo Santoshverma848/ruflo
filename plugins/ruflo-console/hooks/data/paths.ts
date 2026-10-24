@@ -24,6 +24,9 @@ export function joinPath(base: string, ...parts: string[]): string {
   return [trimTrailing(base), ...rest].join(sep)
 }
 
+/** The last non-empty segment of a path under either separator: the project folder's name (`/a/b/` and `C:\a\b` both give `b`). */
+export const baseOf = (p: string): string => p.split(/[\\/]/).filter(part => part !== '').at(-1) ?? ''
+
 /** The last `count` segments of a path joined with `/`, for a heading: `/a/b/c` and `C:\a\b\c` both give `b/c`. */
 export const tailOf = (p: string, count = 2): string => p.split(/[\\/]/).slice(-count).join('/')
 

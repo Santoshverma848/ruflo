@@ -14,6 +14,10 @@ Newest first. One `## <version> — <date>` heading per version, then `feat:`, `
 - fix: a model key for an HTTP endpoint is read through the engine's environment read on Windows, which has no `printenv`.
 - fix: a send to a federation peer on Windows says why nothing was sent. The helper is a bash script, and `bash` on a Windows PATH is the WSL launcher, which cannot open a `C:…` path.
 - fix: for a resumed run, the task id from a search is the latest launch, not the first. The search prints matches with no closing brace between them, so the pattern ran across both (any platform).
+- fix: the standalone terminal (`ruflo tui`) reads the installed plugins, the marketplaces and the workflow runs when `CLAUDE_CONFIG_DIR` is not set. Its config folder was left empty; it now falls back to `<home>/.claude` as the engine does (any platform; found by running every view against a real Windows machine).
+- fix: three folder guards (run folders, run files, cost paths) saw `..` only between slashes, so a `..` segment passed on Windows; a config folder ending in a backslash did not match. They use the shared Windows-aware path helpers.
+- fix: the Research section finds ruflo-goals on Windows (it had its own POSIX-only install-path check), and the menu and boot screen name the project by its last folder instead of the whole `C:…` path.
+- chore: `views/pane` reads `menuView` at call time (a cycle through mission-control and model-tools left it undefined when a test loaded the menu first), and `tui-actions` waits for the outcome it checks instead of a fixed 1.2 s. The whole spec set passes on Windows.
 - chore: the real-disk POSIX write specs (modes, FIFOs) are skipped on Windows, which writes through the host file API; one `ruflo tui --plain` spec no longer needs a runnable fake codex there.
 
 ## 0.47.1 — 2026-10-24

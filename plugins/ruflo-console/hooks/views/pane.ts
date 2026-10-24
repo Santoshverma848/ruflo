@@ -70,7 +70,9 @@ const NETWORKS: readonly (readonly [string, ViewId])[] = [['x.ruv.io', 'xruv'], 
 const WIDE_TABS = 140
 
 export const BODIES: Record<ViewId, (ctx: Ctx) => RenderElement> = {
-  menu: menuView,
+  // Read at call time: views/menu reaches this module through mission-control > model-tools, so loading menu first (a test does) would otherwise
+  // find `menuView` not yet defined when this table is built.
+  menu: ctx => menuView(ctx),
   overview: overviewView,
   swarm: swarmView,
   workflows: workflowsPage,
