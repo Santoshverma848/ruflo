@@ -146,6 +146,13 @@ digest and local cohort membership. Similarity is not verification, and recall
 does not select a favorable subset for efficiency scoring. The full eligible
 training cohort determines the advisory recommendation.
 
+Actual native integration showed that search results contain display previews,
+not complete receipts. Recall hydrates the exact scoped row via getEntry before
+checking its size, identity and signature. ruOS write/restart/recall validates
+three embedded fixture receipts with the declared memory 3.0.9 dependency;
+older desktop memory alpha.26 aborts during native initialization and is not
+qualified. See the [ruOS validation](../../../../docs/validation/managed-ruos-e2e.md).
+
 ### Frozen evaluation gate
 
 The heldout manifest declares 2 to 100 unique task hashes and 3 to 10 trials;

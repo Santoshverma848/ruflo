@@ -145,18 +145,27 @@ export async function recallLearning(root: string, input: unknown, publicKey?: s
   const local = trustedEvidence(read(directory(root)).records, publicKey).filter(e => e.observation.split === 'train' && e.observation.taskType === scope.taskType && e.observation.policyHash === scope.policyHash && e.observation.evaluatorHash === scope.evaluatorHash);
   const allowed = new Set(local.map(e => digest(e.observation)));
   const memoryModule = '../memory/memory-initializer.js';
-  const { searchEntries } = await import(memoryModule) as { searchEntries: (input: Record<string, unknown>) => Promise<{ success: boolean; results: Array<{ key: string; content: string; score: number; namespace: string }> }> };
+  const { searchEntries, getEntry } = await import(memoryModule) as {
+    searchEntries: (input: Record<string, unknown>) => Promise<{ success: boolean; results: Array<{ key: string; content: string; score: number; namespace: string }> }>;
+    getEntry: (input: Record<string, unknown>) => Promise<{ success: boolean; found: boolean; entry?: { key: string; namespace: string; content: string } }>;
+  };
   const result = await searchEntries({ query: `managed workflow ${scope.taskType}`, namespace: 'managed-workflow-evidence', limit: 20, threshold: 0, dbPath: join(resolve(root), '.swarm', 'memory.db') });
   if (!result.success) return { available: false, backend: 'ruflo-memory', evidence: [], recommendation: recommend(local, scope), advisory: true };
   const seen = new Set<string>();
-  const evidence = result.results.slice(0, 20).flatMap(hit => {
-    if (hit.namespace !== 'managed-workflow-evidence' || !allowed.has(hit.key) || seen.has(hit.key) || typeof hit.content !== 'string' || hit.content.length > 8192 || !Number.isFinite(hit.score)) return [];
+  const evidence: Array<{ id: string; similarity: number; strategy: Evidence['observation']['strategy']; sourceHash: string }> = [];
+  for (const hit of result.results.slice(0, 20)) {
+    if (hit.namespace !== 'managed-workflow-evidence' || !allowed.has(hit.key) || seen.has(hit.key) || !Number.isFinite(hit.score)) continue;
+    seen.add(hit.key);
     try {
-      const receipt = evidenceOf(JSON.parse(hit.content));
-      if (!isVerified(receipt, publicKey) || digest(receipt.observation) !== hit.key) return [];
-      seen.add(hit.key);
-      return [{ id: hit.key, similarity: hit.score, strategy: receipt.observation.strategy, sourceHash: receipt.observation.sourceHash }];
-    } catch { return []; }
-  });
+      // Search deliberately returns 60-character display previews. Hydrate the
+      // exact scoped row before authenticating; previews cannot carry receipts.
+      const row = await getEntry({ key: hit.key, namespace: 'managed-workflow-evidence', dbPath: join(resolve(root), '.swarm', 'memory.db') });
+      const entry = row.entry;
+      if (!row.success || !row.found || !entry || entry.key !== hit.key || entry.namespace !== 'managed-workflow-evidence' || typeof entry.content !== 'string' || entry.content.length > 8192) continue;
+      const receipt = evidenceOf(JSON.parse(entry.content));
+      if (!isVerified(receipt, publicKey) || digest(receipt.observation) !== hit.key) continue;
+      evidence.push({ id: hit.key, similarity: hit.score, strategy: receipt.observation.strategy, sourceHash: receipt.observation.sourceHash });
+    } catch { /* A missing or malformed row is not verified recall evidence. */ }
+  }
   return { available: true, backend: 'ruflo-memory', evidence, recommendation: recommend(local, scope), advisory: true, similarityIsVerification: false };
 }

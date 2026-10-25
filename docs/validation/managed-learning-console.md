@@ -1,6 +1,7 @@
 # Managed learning and console validation
 
 Date: 2026-10-25. Extends the initial managed adapter on PR #4471.
+Follow-up: [actual ruOS integration checks and recall fix](managed-ruos-e2e.md).
 Decision: [ADR 0004](../../plugins/ruflo-agent/docs/adrs/0004-verified-learning-and-console.md).
 No runtime dependencies or lockfiles changed.
 

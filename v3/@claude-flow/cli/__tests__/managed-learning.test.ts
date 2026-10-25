@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { canonical, digest, evaluate, evidenceOf, isVerified, manifestOf, observationOf, recommend, trustedEvidence, type Evidence, type Observation } from '../src/services/managed-learning.js';
 import { evaluateLearning, indexLearning, learningStatus, recordLearning, recommendLearning, recallLearning } from '../src/services/managed-learning-store.js';
 
-const memory = vi.hoisted(() => ({ store: vi.fn(), search: vi.fn() }));
-vi.mock('../src/memory/memory-initializer.js', () => ({ storeEntry: memory.store, searchEntries: memory.search }));
+const memory = vi.hoisted(() => ({ store: vi.fn(), search: vi.fn(), get: vi.fn() }));
+vi.mock('../src/memory/memory-initializer.js', () => ({ storeEntry: memory.store, searchEntries: memory.search, getEntry: memory.get }));
 const pair = generateKeyPairSync('ed25519');
 const publicKey = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 const scope = { taskType: 'code-review' as const, policyHash: digest('policy'), evaluatorHash: digest('evaluator') };
@@ -26,7 +26,7 @@ function heldout(): Evidence[] {
 }
 const roots: string[] = [];
 const root = () => { const r = mkdtempSync(join(tmpdir(), 'managed-learning-')); roots.push(r); return r; };
-afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); memory.store.mockReset(); memory.search.mockReset(); });
+afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); memory.store.mockReset(); memory.search.mockReset(); memory.get.mockReset(); });
 
 describe('host verification boundary', () => {
   it('requires the host key and verifies all bound observation fields', () => {
@@ -163,11 +163,22 @@ describe('durable quarantine, attestation and RuVector bridge', () => {
       { key: digest(valid.observation), content: JSON.stringify(valid), score: .9, namespace: 'managed-workflow-evidence' },
       { key: digest(forged.observation), content: JSON.stringify(forged), score: 1, namespace: 'managed-workflow-evidence' },
     ] });
+    memory.get.mockImplementation(async ({ key }) => ({ success: true, found: true, entry: { key, namespace: 'managed-workflow-evidence', content: JSON.stringify(key === digest(valid.observation) ? valid : forged) } }));
     const result = await recallLearning(r, scope, publicKey);
     expect(result).toMatchObject({ available: true, advisory: true, similarityIsVerification: false });
     expect(result.evidence).toHaveLength(1);
     expect(result.recommendation.selected?.strategy.id).toBe('candidate');
     expect(memory.search).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'managed-workflow-evidence' }));
+  });
+  it('hydrates truncated native search previews and rejects wrong scoped rows', async () => {
+    const r = root(), e = training()[0]!, key = digest(e.observation);
+    recordLearning(r, e, publicKey);
+    memory.search.mockResolvedValue({ success: true, results: [{ key, content: JSON.stringify(e).slice(0, 60) + '...', score: .5, namespace: 'managed-workflow-evidence' }] });
+    memory.get.mockResolvedValue({ success: true, found: true, entry: { key, namespace: 'managed-workflow-evidence', content: JSON.stringify(e) } });
+    expect((await recallLearning(r, scope, publicKey)).evidence).toHaveLength(1);
+    expect(memory.get).toHaveBeenCalledWith({ key, namespace: 'managed-workflow-evidence', dbPath: join(r, '.swarm/memory.db') });
+    memory.get.mockResolvedValue({ success: true, found: true, entry: { key, namespace: 'other', content: JSON.stringify(e) } });
+    expect((await recallLearning(r, scope, publicKey)).evidence).toHaveLength(0);
   });
   it('refuses symlink state locations and concurrent writer locks', () => {
     const r = root(), other = root(); symlinkSync(other, join(r, '.claude-flow'));
