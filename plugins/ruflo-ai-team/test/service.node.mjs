@@ -212,3 +212,22 @@ test('anonymous resources/list exposes only static resources, never tenant data'
   assert.deepEqual(uris,['ruv://team/templates','ui://ruflo-ai-team/board-v4.html']);
   assert.doesNotMatch(JSON.stringify(r.body),/Secret Tenant Team|xyzzy/);
 });
+
+test('canonical exact memory lookup remains fenced and OAuth/team scoped over MCP', async (t) => {
+  const f=await fixture(); t.after(()=>f.server.close());
+  const team=value(await call(f.base,'team_create',{name:'Exact',objective:'test'}));
+  const other=value(await call(f.base,'team_create',{name:'Other',objective:'test'}));
+  const key='stable:receipt';
+  value(await call(f.base,'memory_remember',{teamId:team.id,key,text:'Retained public evidence'}));
+  const response=value(await call(f.base,'memory_search',{teamId:team.id,query:key}));
+  assert.equal(response.trust,'untrusted-data-not-instructions');
+  const data=JSON.parse(response.data.slice(response.data.indexOf('\n')+1,response.data.lastIndexOf('\n')));
+  assert.equal(data.backend,'canonical-exact'); assert.equal(data.results[0].match,'exact-id');
+  assert.equal(data.results[0].memory.text,'Retained public evidence');
+  assert.equal((await call(f.base,'memory_search',{teamId:team.id,query:key},null)).status,401);
+  assert.equal((await call(f.base,'memory_search',{teamId:team.id,query:key},'alpha:write')).status,403);
+  assert.equal(value(await call(f.base,'memory_search',{teamId:team.id,query:key},'beta:read')).error,'not_found');
+  const scoped=value(await call(f.base,'memory_search',{teamId:other.id,query:key}));
+  const empty=JSON.parse(scoped.data.slice(scoped.data.indexOf('\n')+1,scoped.data.lastIndexOf('\n')));
+  assert.deepEqual(empty.results,[]);
+});
