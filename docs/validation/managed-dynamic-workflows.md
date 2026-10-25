@@ -8,14 +8,14 @@ plugin guidance, and isolated CI contract. No dependency or lockfile changes.
 
 | Check | Result |
 | --- | --- |
-| Provider fixtures and existing no-key tool contract | 60 tests passed |
+| Provider fixtures and existing no-key tool contract | 87 tests passed |
 | Adjacent persisted workflow validation/resume/ownership | 21 tests passed |
 | Strict TypeScript check of adapter and imported service | Passed |
 | ruflo-agent plugin smoke | 16 passed |
 | ruflo-workflows plugin smoke | 18 passed |
-| CLI/MCP registration audit | 412 registered, zero dangling references |
-| Tool discoverability audit | 410 scanned, zero missing guidance/short/duplicate descriptions |
-| Ruflo 3.25.6 deep code security scan, two production source files | Zero scanner findings |
+| CLI/MCP registration audit | 413 registered, zero dangling references |
+| Tool discoverability audit | 411 scanned, zero missing guidance/short/duplicate descriptions |
+| Ruflo 3.25.6 deep code security scan, adapter and seven hook files | Zero scanner findings |
 | Independent source review | Six confirmed defects corrected and covered by fixtures |
 | Whitespace/diff integrity | Passed |
 
@@ -37,6 +37,7 @@ With repository development dependencies installed, from `v3/@claude-flow/cli`:
 npx vitest run --config vitest.config.ts \
   __tests__/managed-agent-tools.test.ts \
   __tests__/managed-workflows.test.ts \
+  __tests__/managed-mod-integration.test.ts \
   __tests__/workflow-validation-runtime.test.ts \
   __tests__/workflow-resume-dispatch-r50.test.ts \
   __tests__/workflow-progress-ownership-r50.test.ts
@@ -60,8 +61,9 @@ Ruflo security scanner pinned to 3.25.6. The GitHub workflow installs isolated
 Vitest 3.2.6, TypeScript 5.9.3, Node 22 types and cli-core 3.7.5 with lifecycle
 scripts disabled. No provider key is needed by CI.
 
-The scanner was run read-only against copies of only
-`managed-agent-tools.ts` and `managed-workflows.ts`, using:
+The scanner was run read-only against copies of
+`managed-agent-tools.ts`, `managed-workflows.ts`, and the seven changed hook
+files in the agent and workflow mods, using:
 
 ```sh
 npx -y @claude-flow/cli@3.25.6 security scan \
@@ -109,3 +111,19 @@ dollar, no higher false-positive rate, and verified interruption/deletion.
 
 No claim of improved model quality or production readiness follows from the
 synthetic optimization. Keep the PR in draft until live validation is recorded.
+
+## Mod and plugin refinement
+
+The follow-up adds 27 tests exercising real registered hook functions, policy
+settings, local capability discovery, no-network runtime introspection, workflow
+mod routing and compatibility with the existing console parser. Combined focused
+and adjacent suite: 108 passing tests. The original hosted Managed dynamic workflows
+contract passed before this refinement; new hosted checks must run on the updated
+commit. Plugin versions are raised to agent 0.4.0 and workflows 0.7.0 so installed
+copies receive the shipped behavior.
+
+The native Claude plugin test runner was not invoked. Hook execution is covered
+by a deterministic test harness using the existing hook call pattern; the real
+host remains a separate compatibility check. Console parser integration is tested
+without changing the console plugin. The mod is a local admission constraint, not
+an organization-wide spend controller.

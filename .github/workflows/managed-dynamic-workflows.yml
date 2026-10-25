@@ -6,6 +6,7 @@ on:
       - 'v3/@claude-flow/cli/src/services/managed-workflows.ts'
       - 'v3/@claude-flow/cli/__tests__/managed*.test.ts'
       - 'plugins/ruflo-agent/**'
+      - 'plugins/ruflo-workflows/**'
       - '.github/workflows/managed-dynamic-workflows.yml'
   workflow_dispatch:
 permissions:
@@ -27,7 +28,7 @@ jobs:
         run: node node_modules/typescript/lib/tsc.js --target es2022 --module nodenext --moduleResolution nodenext --strict --skipLibCheck --types node --noEmit v3/@claude-flow/cli/src/mcp-tools/managed-agent-tools.ts
       - name: Offline provider and adjacent workflow regressions
         working-directory: v3/@claude-flow/cli
-        run: node ../../../node_modules/vitest/vitest.mjs run --config vitest.config.ts __tests__/managed-agent-tools.test.ts __tests__/managed-workflows.test.ts __tests__/workflow-validation-runtime.test.ts __tests__/workflow-resume-dispatch-r50.test.ts __tests__/workflow-progress-ownership-r50.test.ts
+        run: node ../../../node_modules/vitest/vitest.mjs run --config vitest.config.ts __tests__/managed-agent-tools.test.ts __tests__/managed-workflows.test.ts __tests__/managed-mod-integration.test.ts __tests__/workflow-validation-runtime.test.ts __tests__/workflow-resume-dispatch-r50.test.ts __tests__/workflow-progress-ownership-r50.test.ts
       - name: Plugin and registration contracts
         run: |
           bash plugins/ruflo-agent/scripts/smoke.sh

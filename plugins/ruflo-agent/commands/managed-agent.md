@@ -18,3 +18,7 @@ and worker transcripts before independently validating results. A completed run
 is unverified. `managed_agent_interrupt` requests a pause; it never confirms
 cancellation. A polling timeout does not stop cloud work. See the managed-agent
 skill for the bounded workflow procedure.
+
+For local discovery first inspect `managed_agent_capabilities`, which needs no
+key and makes no network call. `/agent-mod capabilities` shows actual registry
+names and plugin settings. `/managed-workflow` provides the bounded procedure.

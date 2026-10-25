@@ -33,7 +33,7 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 - `managed-agent` — run an Anthropic Claude Managed Agent (cloud) — create / prompt / status / events / list / terminate
 - `nested-subagents` — spawn nested sub-agent trees (depth ≤ 5) via Claude Code's native `Task` tool for context-managed deep delegation
 
-## MCP surface (34 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 7 `managed_agent_*`)
+## MCP surface (35 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 8 `managed_agent_*`)
 
 ### WASM runtime — `v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts` (27 in total; the main ones)
 
@@ -54,6 +54,7 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 
 | Tool | Purpose | WASM counterpart |
 |------|---------|------------------|
+| `managed_agent_capabilities` | Local adapter requirements and integration boundaries; no key or network needed | `/agent-mod capabilities` |
 | `managed_agent_create` | Provision Agent + Environment + Session (`POST /v1/agents`, `/v1/environments`, `/v1/sessions`). Accepts `model` / `system` / `name` / `networking` / `packages` / `initScript` / `mcpServers` / `skills`. | `wasm_agent_create` |
 | `managed_agent_prompt` | Send a user turn (`POST /v1/sessions/{id}/events`), poll until the session goes idle (default 180 s, cap 600 s) → `{finished, status, stopReason, assistantText, toolUses[], eventCount}` | `wasm_agent_prompt` |
 | `managed_agent_status` | Session lifecycle state (idle/running/error, title, last error) | — |
@@ -159,3 +160,34 @@ intentional configuration migration for existing custom endpoints.
 
 See [ADR 0003](docs/adrs/0003-managed-dynamic-workflows.md) for threat model,
 limits, validation commands, and deferred integration boundaries.
+
+### Mod and capability integration
+
+Install or update `ruflo-agent` 0.4.0 and `ruflo-workflows` 0.7.0.
+`/managed-workflow` is the bounded remote execution skill. `/agent-mod capabilities`
+reads the current host registry, while `/wf-mod managed` discovers the cloud
+adapter from the workflow mod. Neither command invokes a provider.
+
+Plugin settings:
+
+```json
+{
+  "managedWorkflows": "on",
+  "maxBudgetCents": "2500",
+  "allowInlineAgents": "off"
+}
+```
+
+Dynamic creation is off by default. Invalid budget settings deny creation.
+Disabling the secret `guard` does not disable these admission rules. Default
+inline policy requires predefined agents with separately reviewed tools.
+The policy only constrains creation calls passing through this host session;
+externally created sessions, other hosts and direct API clients require their
+own authorization and spending controls. The mod never expands host permission.
+
+The console Mods page consumes the existing version 1 status contract and
+shows policy, maximum cents, inline mode, calls, blocks and last refusal class.
+No console plugin update is required. It shows local policy, not remote state.
+`managed_agent_capabilities` reports local credential configuration as a boolean;
+beta access, authorization and remote health remain unknown until checked through
+an authorized provider operation. Registered tools alone prove none of these.

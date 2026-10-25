@@ -10,7 +10,7 @@ date: 2026-10-24
 Extend ADR-115's existing cloud executor rather than create another provider
 stack. Users can opt into Anthropic dynamic workflows, observe runs and worker
 failures, interrupt work and preserve evidence without treating generated claims
-as verified results. The existing six tools remain; interrupt is additive.
+as verified results. The existing six tools remain; interrupt and local capabilities are additive.
 The native `workflow_*` scheduler and WASM runtime are unchanged.
 
 Inputs: task text, an API credential held by the host, optional model, exact
@@ -150,3 +150,29 @@ Rollback: stop using dynamicWorkflows on new sessions, explicitly terminate
 existing sessions and owned environments, or revert this PR. Removing the local
 adapter does not stop remote sessions. No new production state schema or npm
 dependency requires migration.
+
+## Plugin and mod integration refinement
+
+`ruflo-agent` 0.4.0 adds an independent creation admission hook. The optional
+secret guard never disables dynamic policy. Settings default to cloud fanout
+off, inline agents off, maximum 2500 US cents. A malformed configured cap becomes
+zero and denies dynamic creation. Flat and wrapped tool input shapes are supported;
+ambiguous mixed shapes are refused. The hook can deny or forward unchanged,
+never grant permission over a downstream host denial.
+
+`/agent-mod capabilities` refreshes the live tool registry locally, displays full
+names and missing tools, and marks duplicate suffixes ambiguous. A failed registry
+read is unknown, not missing. `managed_agent_capabilities` exposes local runtime
+facts without network activity. Credential presence is a boolean; provider health,
+beta access and authorization remain unknown. The descriptor names memory/RVF
+boundaries without granting those capabilities.
+
+`ruflo-workflows` 0.7.0 adds `/wf-mod managed` to discover that descriptor and route
+to the new `managed-workflow` skill. The generic console already consumes modVersion,
+summary and refusal class through version 1 status files, so the agent mod supplies
+bounded static policy metadata without raw prompts, credentials or session IDs.
+
+Admission is host-session-local. It does not govern externally created sessions,
+other Ruflo processes or direct provider clients. Existing provider budgets and
+host action capabilities remain independent. No new remote execution or provider
+readiness is implied by plugin installation or registry discovery.

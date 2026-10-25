@@ -156,6 +156,21 @@ function maName(prefix: string, given?: unknown): string {
 
 export const managedAgentTools: MCPTool[] = [
   {
+    name: 'managed_agent_capabilities',
+    description: 'Inspect local Managed Agents adapter capabilities without network access or an API key. Use when native tool registration alone cannot establish adapter requirements, budget semantics or verification boundaries. Reports configuration facts only; it never verifies beta access, remote health or authorization. Pair with /agent-mod capabilities for plugin policy and registered tools; use wasm_agent_* for local execution.',
+    category: 'agent',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => ({
+      runtime: 'managed', provider: 'anthropic', networkCalled: false,
+      credentialConfigured: !!apiKey(), betaAccess: 'unknown', remoteHealth: 'unknown', authorization: 'host-policy-required',
+      features: ['dynamic-workflows', 'budget-at-creation', 'limited-networking', 'predefined-agents', 'thread-inspection', 'interrupt-request', 'session-delete'],
+      create: { dynamicWorkflows: true, budgetCents: 'positive integer US cents string', networking: 'limited', predefinedAgents: 'optional agent IDs; required by default mod policy' },
+      controls: { budgetOvershoot: 'in-flight requests may finish', promptTimeout: 'observation only', interrupt: 'pause requested, not cancellation', verification: 'unverified' },
+      integrations: { agentMod: '/agent-mod capabilities', workflowMod: '/wf-mod managed', console: 'Mods page reads agent-mod/status.json', evidence: 'independently verify before memory_* retention or RVF export' },
+      scope: 'Adapter facts do not grant tools, credentials, plugins or release authority. Mod admission is host-session-local, not global spend enforcement.',
+    }),
+  },
+  {
     name: 'managed_agent_create',
     description:
       'Spin up an Anthropic-managed cloud agent (Agent + Environment + Session) — the CLOUD counterpart of wasm_agent_create. Use when wasm_agent_create (local WASM sandbox) is wrong because the task is long-running/async (minutes-hours), needs a real cloud container with pre-installed packages + network, or persistent filesystem + transcript across turns. For a fast, free, ephemeral, offline agent use wasm_agent_create (rvagent). Needs ANTHROPIC_API_KEY + Managed Agents beta access. Opt into dynamic workflows with dynamicWorkflows=true and mandatory budgetCents (integer US cents); networking is then limited. Returns {sessionId, agentId, environmentId}; pair with managed_agent_prompt.',

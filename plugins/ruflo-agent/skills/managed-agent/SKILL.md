@@ -2,7 +2,7 @@
 name: managed-agent
 description: Run an Anthropic Claude Managed Agent — a cloud agent harness (container + filesystem + tools), the cloud counterpart of the local wasm-agent runtime
 argument-hint: "<create|prompt|status|events|list|terminate> [options]"
-allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_terminate mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__wasm_agent_create Bash
+allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_capabilities mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_terminate mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__wasm_agent_create Bash
 ---
 
 # Managed Agent (Anthropic cloud runtime)
@@ -73,6 +73,11 @@ managed_agent_terminate { "sessionId": "sesn_…", "environmentId": "env_…" }
    when finished; delete only environments you own. Preserve IDs returned on
    failed creation and inspect ambiguous failures before retrying.
 
-The six original tools remain available, plus `managed_agent_interrupt`.
+The six original tools remain available, plus `managed_agent_interrupt` and local `managed_agent_capabilities`.
 No automatic gateway deployment, recursive delegation, budget escalation,
 artifact execution, repository merge, memory promotion or RVF signing occurs.
+
+Use `/managed-workflow` for the full dynamic workflow procedure and
+`managed_agent_capabilities`, `/agent-mod capabilities` or `/wf-mod managed` to
+discover the adapter. Default mod policy disables dynamic creation and inline
+agents; enable only the settings needed for an already authorized task.
