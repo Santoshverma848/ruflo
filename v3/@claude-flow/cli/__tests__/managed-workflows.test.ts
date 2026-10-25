@@ -120,6 +120,27 @@ describe('pagination and observation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(new URL(fetchMock.mock.calls[3][0]).searchParams.has('created_at[gte]')).toBe(true);
   });
+  it('does not report the previous turn as the answer on a later poll while the new turn is still running', async () => {
+    vi.useFakeTimers();
+    // The provider returns the whole session history on every read. Pre-boundary events (the old turn's text and
+    // its end_turn idle) were never fed to the tracker, so a later poll must keep ignoring them.
+    const old = [event('oldText', 'agent.message', { content: [{ type: 'text', text: 'OLD ANSWER' }] }), idle('old')];
+    const head = [...old, event('current', 'user.message'), event('running', 'session.status_running')];
+    const partial = event('partial', 'agent.message', { content: [{ type: 'text', text: 'partial' }] });
+    let eventReads = 0;
+    fetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'POST') return json({ data: [event('current', 'user.message', { processed_at: null })] });
+      if (url.includes('/events')) return json({ data: ++eventReads === 1 ? head : [...head, partial] });
+      return json({ id: 'sesn_a', status: 'running' });
+    });
+    const pending = call('managed_agent_prompt', { sessionId: 'sesn_a', message: 'run', maxWaitMs: 4000 });
+    await vi.advanceTimersByTimeAsync(5000);
+    const result = await pending;
+    expect(eventReads).toBeGreaterThan(2);
+    expect(result.finished).toBe(false);
+    expect(result.assistantText).toBe('partial');
+    expect(result.assistantText).not.toContain('OLD ANSWER');
+  });
   it('rejects concurrent local prompts without sending twice', async () => {
     let release!: (value: Response) => void;
     fetchMock.mockReturnValueOnce(new Promise(resolve => { release = resolve; }));
@@ -193,8 +214,67 @@ describe('transport and cleanup security', () => {
     expect((await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: 'env_a' })).success).toBe(false);
   });
   it('never calls a queued interrupt confirmed cancellation', async () => {
-    fetchMock.mockImplementation(() => json({ data: [] }));
+    vi.stubEnv('RUFLO_MANAGED_CONTROL', '1'); vi.stubEnv('RUFLO_MANAGED_CONTROL_SESSIONS', 'sesn_a');
+    fetchMock.mockImplementation(() => json({ id: 'sesn_a', status: 'running', data: [] }));
     expect(await call('managed_agent_interrupt', { sessionId: 'sesn_a' })).toMatchObject({ interruptRequested: true, cancellationConfirmed: false });
+  });
+});
+
+describe('failures after a prompt was already sent', () => {
+  it('reports the message id so a retry does not send a duplicate', async () => {
+    fetchMock.mockResolvedValueOnce(json({ data: [event('sent', 'user.message', { processed_at: null })] })).mockImplementation(() => json({}, 500));
+    const result = await call('managed_agent_prompt', { sessionId: 'sesn_a', message: 'run', maxWaitMs: 2000 });
+    expect(result.success).toBe(false);
+    expect(result.messageId).toBe('sent');
+    expect(String(result.note)).toMatch(/already sent/i);
+  });
+  it('a failed send reports no message id', async () => {
+    fetchMock.mockImplementation(() => json({}, 500));
+    const result = await call('managed_agent_prompt', { sessionId: 'sesn_a', message: 'run' });
+    expect(result.success).toBe(false);
+    expect(result.messageId).toBeUndefined();
+  });
+});
+
+describe('the governed control plane covers its sibling tools', () => {
+  const governed = (sessions: string) => { vi.stubEnv('RUFLO_MANAGED_CONTROL', '1'); vi.stubEnv('RUFLO_MANAGED_CONTROL_SESSIONS', sessions); };
+  it('managed_agent_interrupt is refused by default and sends nothing to the provider', async () => {
+    const result = await call('managed_agent_interrupt', { sessionId: 'sesn_a' });
+    expect(result.success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('managed_agent_interrupt is refused for a session outside the host allowlist', async () => {
+    governed('sesn_a');
+    expect((await call('managed_agent_interrupt', { sessionId: 'sesn_other' })).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('managed_agent_terminate keeps its default behaviour while the control plane is off', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    expect((await call('managed_agent_terminate', { sessionId: 'sesn_whatever' })).success).toBe(true);
+  });
+  it('managed_agent_terminate honours the allowlist once the host enabled the control plane', async () => {
+    governed('sesn_a');
+    const result = await call('managed_agent_terminate', { sessionId: 'sesn_other', environmentId: 'env_x' });
+    expect(result.success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('managed_agent_terminate will not delete an environment that is not the session\'s own', async () => {
+    governed('sesn_a');
+    fetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      return json({ id: 'sesn_a', status: 'running', environment_id: 'env_a' });
+    });
+    const result = await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: 'env_other' });
+    expect(result).toMatchObject({ sessionDeleted: true, environmentDeleted: false, success: false });
+    expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/environments/'))).toBe(false);
+  });
+  it('managed_agent_terminate still removes the session\'s own environment under governance', async () => {
+    governed('sesn_a');
+    fetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      return json({ id: 'sesn_a', status: 'running', environment_id: 'env_a' });
+    });
+    expect(await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: 'env_a' })).toMatchObject({ sessionDeleted: true, environmentDeleted: true, success: true });
   });
 });
 

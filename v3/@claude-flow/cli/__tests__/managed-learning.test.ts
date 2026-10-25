@@ -28,6 +28,32 @@ const roots: string[] = [];
 const root = () => { const r = mkdtempSync(join(tmpdir(), 'managed-learning-')); roots.push(r); return r; };
 afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); memory.index.mockReset(); memory.recall.mockReset(); });
 
+describe('canonical signature encoding', () => {
+  // An Ed25519 signature is 64 bytes = 86 base64 characters + "==". The last character carries 4 unused bits that Node's
+  // decoder ignores, so up to 16 different strings verify as the same signature. Each used to dedupe as a NEW record.
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  function variantOf(signature: string): string {
+    const last = B64.indexOf(signature[85]);
+    const other = B64[(last & 0b111100) | ((last + 1) & 0b11)];
+    return signature.slice(0, 85) + other + '==';
+  }
+  it('rejects a non-canonical re-encoding of a valid signature, though it still verifies as bytes', () => {
+    const evidence = signed(observation());
+    const variant = variantOf(evidence.signature!);
+    expect(variant).not.toBe(evidence.signature);
+    expect(Buffer.from(variant, 'base64').equals(Buffer.from(evidence.signature!, 'base64'))).toBe(true);
+    expect(() => evidenceOf({ observation: evidence.observation, signature: variant })).toThrow('Invalid verifier signature');
+    expect(evidenceOf(evidence).signature).toBe(evidence.signature);
+  });
+  it('cannot be used to store the same attempt twice', () => {
+    const dir = root();
+    const evidence = signed(observation());
+    recordLearningBatch(dir, [evidence], publicKey);
+    expect(() => recordLearningBatch(dir, [{ observation: evidence.observation, signature: variantOf(evidence.signature!) }], publicKey)).toThrow();
+    expect(learningStatus(dir, publicKey).observations).toBe(1);
+  });
+});
+
 describe('host verification boundary', () => {
   it('requires the host key and verifies all bound observation fields', () => {
     const evidence = signed(observation());

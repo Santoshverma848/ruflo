@@ -307,3 +307,39 @@ The fixed-fixture batch benchmark reduced 18 transactions to one, with 7.29 time
 lower median admission time. This measures ledger overhead, not provider quality
 or cost savings. No routing default was promoted. Live provider, production
 verifier and cross-platform release gates remain open.
+
+## Amendment: independent review and known limits, 2026-10-25
+
+An independent security and correctness review of this change found the defects below. They were fixed with a test that fails
+without the fix: a stale previous-turn completion on later polls of `managed_agent_prompt`; `managed_agent_interrupt` having no
+host policy gate (it now uses the `managed_agent_control` path; `managed_agent_terminate` obeys the same allowlist, and deletes only
+the session's own environment, once `RUFLO_MANAGED_CONTROL=1`); non-canonical base64 spellings of one verifier signature being
+stored as separate ledger records; a failed local snapshot write failing a successful provider read or deletion; a failed prompt not
+reporting its `messageId`; and the console showing rescheduling, budget-stopped and action-blocked sessions as finished.
+
+The following are **known limits that this change does not remove**. They are why learning and the control plane stay opt-in
+(`RUFLO_MANAGED_LEARNING=1`, `RUFLO_MANAGED_CONTROL=1`) and why the evidence is advisory:
+
+1. **The verifier runs its checks in the same trust domain as its signing key.** Checks run as the same user as the signer. A 0600
+   key file is readable by any same-user process, so a check that executes agent-produced code can read the key and sign a false
+   observation. The host-owned cost receipt and specs must live under the verified root, and the owner and group/world-write checks
+   cannot tell the host's file from one the agent wrote as the same user. The command denylist does not stop `python3 -c`, `node -e`
+   or `find -exec`. **Only run the verifier where its manifests and checks are authored by the host, never by the agent under test,
+   and ideally sign from a separate user or container.** A cost receipt is not authenticated: `successesPerDollar` is only as honest
+   as that file.
+2. **Evidence is only partly bound to what ran.** `treeHash` covers the listed files; `evaluatorHash` hashes the command line, not
+   the contents of the scripts or dependencies the check read. Receipts carry no ledger or project binding, key id or expiry, and
+   a synthetic-fixture receipt signed by the production key looks the same as a live one in the ledger.
+3. **A crashed process can leave a lock that nothing reclaims.** `*.collector.lock`, `snapshot.lock` and the learning `writer.lock`
+   carry no pid or time. Remove the file by hand after confirming no ruflo process is running; concurrent writers fail instead of
+   waiting.
+4. **Some sessions cannot be controlled or can wedge.** A session in an `error` state is not accepted by the control allowlist. A
+   conflicting replay of a processed event, or more than 10,000 events, makes refresh throw on every read until the process restarts.
+5. **Observation cost.** Each poll deep-copies up to 16 MB of events two or three times, including on a cache hit.
+6. **The learning summary is written after the ledger commit.** If it fails or exceeds 64 KB the caller sees an error although the
+   record is committed.
+7. **Unconfirmed against the live provider:** whether a `created_at[gte]` filter with a `processed_at` watermark can skip a message
+   queued while the session was busy, and whether `max_list_cost.amount` is in cents. Both need the live-provider canary that is
+   still an open release gate.
+
+A native-memory child process is a process boundary, not an OS memory or network sandbox.

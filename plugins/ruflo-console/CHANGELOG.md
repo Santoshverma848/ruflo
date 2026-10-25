@@ -1,9 +1,10 @@
 # Changelog: ruflo-console
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
-- feat: exact managed session controls in the model palette with existing confirmation and permission gates
 
 ## 0.49.0 — 2026-10-24
+- feat: exact managed session controls in the model palette with existing confirmation and permission gates
+- fix: a rescheduling session shows as running, and a session stopped at its budget, waiting on a required action or holding an open tool request shows as active instead of finished
 - feat: first class managed sessions in Workflows with reported budgets, remote blockers and host checked controls
 - feat: advisory managed learning evidence and recommendations in Learning
 - fix: provider completion never becomes a verified correctness badge; local snapshot flags are not authority

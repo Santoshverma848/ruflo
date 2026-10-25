@@ -28,6 +28,20 @@ function context(facts = parseManaged(snapshot())): Ctx {
   return { kit, state, nowMs: NOW, columns: 100, pictures: new Map(), act: { workflows: { ask: vi.fn() } } as any }
 }
 
+describe('managed run state shown in the console', () => {
+  // The console used to show anything that was not literally `running` as `finished`.
+  it.each([
+    ['rescheduling is still running', { status: 'rescheduling', stopReason: null, providerFinished: false }, 'running'],
+    ['a budget stop is not finished', { status: 'idle', stopReason: 'budget_reached', providerFinished: false }, 'active'],
+    ['waiting on a required action is not finished', { status: 'idle', stopReason: 'requires_action', providerFinished: false }, 'active'],
+    ['an open tool request is not finished', { blockedEventIds: ['evt_a'] }, 'active'],
+    ['a completed turn is finished', {}, 'finished'],
+  ])('%s', (_name, extra, state) => {
+    const facts = parseManaged(snapshot([session(extra)]))!
+    expect(managedRuns(facts, NOW)[0]!.state).toBe(state)
+  })
+})
+
 describe('managed local snapshot contract', () => {
   it('never treats snapshot verification booleans as authority', () => {
     const facts = parseManaged(snapshot())!

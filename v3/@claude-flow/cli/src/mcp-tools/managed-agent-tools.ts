@@ -17,7 +17,7 @@
  *   managed_agent_list     → GET /v1/sessions
  *   managed_agent_terminate→ DELETE /v1/sessions/{id} (+ optionally the env)          ↔ wasm_agent_terminate
  */
-import { createHash } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { managedLearningTool } from './managed-learning-tool.js';
 import { ManagedRunCollector } from '../services/managed-run-collector.js';
 import { collectWithLease, executeManagedControl, publishManagedSnapshot, publishManagedTermination } from '../services/managed-run-store.js';
@@ -122,7 +122,10 @@ async function fetchSessionEvents(sessionId: string, since?: string, threadId?: 
 
 let collectorScope = '';
 let collector = new ManagedRunCollector();
-function currentCollectorScope() { return createHash('sha256').update(getProjectCwd() + apiBase() + apiKey()).digest('hex'); }
+// The scope only answers "did the project, endpoint or credential change since this collector was built" and never
+// leaves the process, so it is a keyed digest under a random per-process key: the API key is never hashed bare.
+const SCOPE_KEY = randomBytes(32);
+function currentCollectorScope() { return createHmac('sha256', SCOPE_KEY).update(JSON.stringify([getProjectCwd(), apiBase(), apiKey()])).digest('hex'); }
 function scopedCollector() {
   const scope = currentCollectorScope();
   if (scope !== collectorScope) { collector = new ManagedRunCollector(); collectorScope = scope; }
@@ -141,7 +144,8 @@ async function observeSession(sessionId: string, deadline = Date.now() + 30_000)
       },
     });
     if (currentCollectorScope() !== expectedScope) throw new Error('Managed credential scope changed during observation');
-    publishManagedSnapshot(root, result.snapshot);
+    // The snapshot only feeds the console. A write failure (size cap, stale lock) must not fail a successful provider read.
+    try { publishManagedSnapshot(root, result.snapshot); } catch { /* best effort */ }
     return result;
   }, expectedScope);
 }
@@ -167,7 +171,13 @@ async function waitForIdle(sessionId: string, maxWaitMs: number, messageId: stri
         progress.accept(events.slice(boundary));
         started = true;
       }
-    } else progress.accept(events);
+    } else {
+      // The provider returns the whole session history on every read. Keep ignoring everything before the
+      // acknowledged message: its old end_turn idle would otherwise be applied on a later poll and report
+      // the previous turn's answer as finished while the new turn is still running.
+      const boundary = events.findIndex(e => e.id === messageId);
+      if (boundary >= 0) progress.accept(events.slice(boundary));
+    }
     const state = progress.snapshot();
     if (started && (state.finished || state.blocked || (state.interrupted && state.status === 'idle') || state.status === 'terminated')) return state;
     await new Promise(r => setTimeout(r, Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))));
@@ -224,7 +234,7 @@ export const managedAgentTools: MCPTool[] = [
           read: id => request('GET', id),
           inspect: async (id, offset) => { await observeSession(id); const page = scopedCollector().page(id, offset); if (!page) throw new Error('Snapshot unavailable'); publishManagedSnapshot(getProjectCwd(), page); return page; },
           interrupt: id => request('POST', id, { events: [{ type: 'user.interrupt' }] }),
-          terminate: async id => { const result = await request('DELETE', id); publishManagedTermination(getProjectCwd(), id, scopedCollector()); return result; },
+          terminate: async id => { const result = await request('DELETE', id); try { publishManagedTermination(getProjectCwd(), id, scopedCollector()); } catch { /* the provider deletion is the fact; the local snapshot is best-effort */ } return result; },
         });
       } catch { return { success: false, error: 'Managed action refused: recheck current host policy, provider state and observation lease' }; }
     },
@@ -347,6 +357,7 @@ export const managedAgentTools: MCPTool[] = [
       if (input.maxWaitMs !== undefined && (typeof input.maxWaitMs !== 'number' || !Number.isFinite(input.maxWaitMs) || input.maxWaitMs <= 0)) return { success: false, error: 'maxWaitMs must be finite and positive' };
       if (pendingPrompts.has(sessionId)) return { success: false, error: 'A prompt is already pending for this session' };
       pendingPrompts.add(sessionId);
+      let sentMessageId: string | undefined;
       try {
         const send = await maRequest('POST', `/sessions/${encodeURIComponent(sessionId)}/events`, {
           events: [{ type: 'user.message', content: [{ type: 'text', text: message }] }],
@@ -354,6 +365,7 @@ export const managedAgentTools: MCPTool[] = [
         if (!send.ok) return { success: false, stage: 'send', sessionId, error: send.error };
         const sent = eventPage(send.data).data.find(e => e.type === 'user.message');
         if (!sent) return { success: false, sessionId, error: 'Missing message acknowledgement; inspect events before retrying' };
+        sentMessageId = sent.id;
         const maxWait = typeof input.maxWaitMs === 'number' ? input.maxWaitMs : DEFAULT_MAX_WAIT_MS;
         const state = await waitForIdle(sessionId, maxWait, sent.id);
         return {
@@ -362,7 +374,9 @@ export const managedAgentTools: MCPTool[] = [
           note: 'Provider output is unverified. Inspect workflow threads and independently test artifacts. A wait timeout does not stop remote execution; inspect events or terminate explicitly.',
         };
       } catch (error) {
-        return { success: false, sessionId, finished: false, error: (error as Error).message };
+        // Once the provider acknowledged the message, say so: a retry would send it twice.
+        return { success: false, sessionId, finished: false, error: (error as Error).message,
+          ...(sentMessageId ? { messageId: sentMessageId, note: 'The message was already sent; inspect events instead of resending.' } : {}) };
       } finally { pendingPrompts.delete(sessionId); }
     },
   },
@@ -443,8 +457,11 @@ export const managedAgentTools: MCPTool[] = [
     handler: async input => {
       if (!apiKey()) return { success: false, ...NEEDS_KEY };
       if (typeof input.sessionId !== 'string' || !input.sessionId) return { success: false, error: 'sessionId is required' };
-      const r = await maRequest('POST', `/sessions/${encodeURIComponent(input.sessionId)}/events`, { events: [{ type: 'user.interrupt' }] });
-      return { success: r.ok, sessionId: input.sessionId, interruptRequested: r.ok, cancellationConfirmed: false, ...(!r.ok ? { error: r.error } : {}) };
+      // No ungated path to a remote action: this uses the same host policy, session allowlist and fresh provider-state
+      // check as managed_agent_control, so a prompt-injected caller cannot interrupt arbitrary organisation sessions.
+      const control = managedAgentTools.find(t => t.name === 'managed_agent_control')!;
+      const r = await control.handler({ sessionId: input.sessionId, action: 'interrupt' }) as Record<string, unknown>;
+      return { ...r, sessionId: input.sessionId, interruptRequested: r.success === true, cancellationConfirmed: false };
     },
   },
   {
@@ -464,14 +481,33 @@ export const managedAgentTools: MCPTool[] = [
       if (!apiKey()) return { success: false, ...NEEDS_KEY };
       const sessionId = String(input.sessionId ?? '');
       if (!sessionId) return { success: false, error: 'sessionId is required' };
+      // Default behaviour is unchanged. Once the host has switched on the governed control plane
+      // (RUFLO_MANAGED_CONTROL=1) this tool obeys the same session allowlist, and may delete only that session's own environment.
+      const governed = process.env.RUFLO_MANAGED_CONTROL === '1';
+      if (governed && !(process.env.RUFLO_MANAGED_CONTROL_SESSIONS ?? '').split(',').map(x => x.trim()).filter(Boolean).includes(sessionId)) {
+        return { success: false, error: 'Host managed control policy denies this session' };
+      }
+      const wantsEnvironment = typeof input.environmentId === 'string' && input.environmentId.length > 0;
+      let ownEnvironment: string | undefined;
+      if (governed && wantsEnvironment) {
+        const g = await maRequest<MaSession>('GET', `/sessions/${encodeURIComponent(sessionId)}`);
+        if (!g.ok) return { success: false, error: g.error };
+        ownEnvironment = g.data.environment_id;
+      }
       const s = await maRequest('DELETE', `/sessions/${encodeURIComponent(sessionId)}`);
       const result: Record<string, unknown> = { runtime: 'managed', sessionId, sessionDeleted: s.ok };
-      if (s.ok) publishManagedTermination(getProjectCwd(), sessionId, scopedCollector());
+      // The deletion already happened; a failed local snapshot update must not turn it into an error or skip the environment.
+      if (s.ok) { try { publishManagedTermination(getProjectCwd(), sessionId, scopedCollector()); } catch { result.snapshotUpdated = false; } }
       if (!s.ok) result.error = s.error;
-      if (s.ok && typeof input.environmentId === 'string' && input.environmentId) {
-        const e = await maRequest('DELETE', `/environments/${encodeURIComponent(String(input.environmentId))}`);
-        result.environmentDeleted = e.ok;
-        if (!e.ok) result.environmentError = e.error;
+      if (s.ok && wantsEnvironment) {
+        if (governed && input.environmentId !== ownEnvironment) {
+          result.environmentDeleted = false;
+          result.environmentError = 'environmentId does not belong to this session';
+        } else {
+          const e = await maRequest('DELETE', `/environments/${encodeURIComponent(String(input.environmentId))}`);
+          result.environmentDeleted = e.ok;
+          if (!e.ok) result.environmentError = e.error;
+        }
       }
       result.success = s.ok && result.environmentDeleted !== false;
       return result;

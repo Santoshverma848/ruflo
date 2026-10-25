@@ -55,7 +55,10 @@ export function evidenceOf(value: unknown): Evidence {
   const v = object(value);
   if (Object.keys(v).some(k => !['observation', 'signature'].includes(k))) throw new Error('Unknown evidence fields');
   const observation = observationOf(v.observation);
-  if (v.signature !== undefined && (typeof v.signature !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(v.signature))) throw new Error('Invalid verifier signature');
+  // Canonical form only: the last base64 character of a 64-byte signature has 4 unused bits that the decoder ignores, so
+  // other spellings of the same bytes would verify yet digest differently and be stored as separate records.
+  if (v.signature !== undefined && (typeof v.signature !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(v.signature)
+    || Buffer.from(v.signature, 'base64').toString('base64') !== v.signature)) throw new Error('Invalid verifier signature');
   return { observation, ...(v.signature ? { signature: v.signature as string } : {}) };
 }
 

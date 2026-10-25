@@ -73,7 +73,7 @@ managed_agent_terminate { "sessionId": "sesn_…", "environmentId": "env_…" }
    when finished; delete only environments you own. Preserve IDs returned on
    failed creation and inspect ambiguous failures before retrying.
 
-The six original tools remain available, plus `managed_agent_interrupt` and local `managed_agent_capabilities`.
+The six original tools remain available, plus `managed_agent_interrupt`, `managed_agent_control` (host-policy gated inspect, interrupt and terminate), `managed_agent_learning` and local `managed_agent_capabilities`. `managed_agent_interrupt` is gated like `managed_agent_control`; `managed_agent_terminate` is gated the same way once the host sets `RUFLO_MANAGED_CONTROL=1`.
 No automatic gateway deployment, recursive delegation, budget escalation,
 artifact execution, repository merge, memory promotion or RVF signing occurs.
 

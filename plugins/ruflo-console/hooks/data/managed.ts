@@ -32,7 +32,7 @@ export type ManagedLearning = {
 }
 
 /** Known states stay literal; unknown strings cannot inject labels or status semantics. */
-const state = (v: unknown): string => typeof v === 'string' && ['running', 'idle', 'terminated', 'ended', 'completed', 'failed', 'error', 'stopped', 'unknown'].includes(v) ? v : 'unknown'
+const state = (v: unknown): string => typeof v === 'string' && ['running', 'rescheduling', 'idle', 'terminated', 'ended', 'completed', 'failed', 'error', 'stopped', 'unknown'].includes(v) ? v : 'unknown'
 
 export function parseManaged(text: string | null): ManagedFacts | null {
   if (text === null || text.length > MANAGED_MAX_BYTES) return null
@@ -119,7 +119,7 @@ export function managedRuns(facts: ManagedFacts | null | undefined, nowMs: numbe
     const agents: WfAgent[] = s.threads.map(t => ({ id: t.id, label: t.id, phase: t.runId && t.phaseId ? phaseNames.get(`${t.runId}:${t.phaseId}`) ?? `${t.runId} / ${t.phaseId}` : t.runId ?? 'Primary', state: stale ? 'stale' : t.status === 'running' ? 'running' : ['failed', 'error'].includes(t.status) ? 'failed' : ['ended', 'completed', 'terminated', 'stopped'].includes(t.status) ? 'done' : 'idle', hasWorktree: false, isUnverified: true }))
     const titles = [...new Set([...s.runs.flatMap(r => r.phases.length ? r.phases.map(p => `${r.id} / ${p.name}`) : [r.id]), ...agents.map(a => a.phase)])]
     const phases = titles.map(title => { const list = agents.filter(a => a.phase === title); return { title, detail: 'provider observation; correctness unverified', agents: list, done: list.filter(a => a.state === 'done').length, total: list.length, running: list.filter(a => a.state === 'running').length, failed: list.filter(a => a.state === 'failed').length } })
-    return { id: s.sessionId, name: `Managed ${s.sessionId}`, kind: 'managed', state: stale ? 'stalled' : s.observedFailures > 0 ? 'failed' : s.status === 'running' ? 'running' : 'finished', phases,
+    return { id: s.sessionId, name: `Managed ${s.sessionId}`, kind: 'managed', state: stale ? 'stalled' : s.observedFailures > 0 ? 'failed' : s.status === 'running' || s.status === 'rescheduling' ? 'running' : s.stopReason === 'budget_reached' || s.stopReason === 'requires_action' || s.blockedEventIds.length > 0 ? 'active' : 'finished', phases,
       running: s.threadCounts.running, done: s.threadCounts.ended, failed: Math.max(s.observedFailures, s.threadCounts.failed), idle: s.threadCounts.idle, total: s.threadCount,
       totalTokens: null, isTokensPartial: true, hasRecord: true, updatedMs: s.updatedMs, isStale: stale, managed: s }
   })
