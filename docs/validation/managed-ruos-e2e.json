@@ -65,6 +65,18 @@
     "toolCalls": 0,
     "reportedCostUsd": 0
   },
+  "authenticatedConsoleRetry": {
+    "loginVerified": true,
+    "modelTurnSucceeded": true,
+    "pluginListed": true,
+    "pluginVersion": "0.49.0",
+    "hostVersion": "2.1.283",
+    "consoleToolsAvailable": false,
+    "consoleToolCalls": 0,
+    "reportedCostUsd": 0.0183653,
+    "driverExitCode": 1,
+    "passed": false
+  },
   "directProvider": {
     "tested": false,
     "reason": "No API key delivered to executor"

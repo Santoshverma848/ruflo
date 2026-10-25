@@ -21,6 +21,7 @@ No tenant model route, login, capability grant or global runtime was changed.
 | Native indexing with declared memory 3.0.9 | Three records durably indexed with embeddings |
 | Native search after process restart, before fix | Failed: zero of three receipts recalled |
 | Native search after process restart, after fix | Passed: three of three receipts authenticated; advisory strategy returned; defaults unchanged |
+| Claude login and authenticated retry | Login verified; model turn succeeded; console driver failed because console tools were absent |
 
 The terminal check injected workersInspected=true, acceptancePassed=true and
 verification=verified into a snapshot. The real Node filesystem reader and
@@ -72,18 +73,28 @@ installed package version. Initial old-backend versions were AgentDB
 3.0.0-alpha.20 and RuVector core 0.1.32. No claim of arbitrary historical backend
 compatibility follows from the successful current-dependency run.
 
-The real headless Claude console driver failed before any tool call:
+The first real headless Claude console driver failed before any tool call:
 `Failed to authenticate: OAuth session expired and could not be refreshed`.
 It reported cost $0 and zero calls. ANTHROPIC_API_KEY and CLAUDE_API_KEY were
 absent from the executor environment and Claude settings. The ruOS vault lists
 an Anthropic slot, but the exposed tools do not supply a verified key-delivery
 path for this running executor. Secret values were never requested or printed.
 
-Therefore direct Anthropic Managed Agents execution, live budget pauses,
-fresh remote controls and the actual Claude function-hook console host remain
-unvalidated. A Claude Code login alone also does not establish Managed Agents
-API credentials or beta entitlement. Refresh the host login and securely deliver
-an authorized API key with beta access before rerunning a bounded provider test.
+The user subsequently completed authentication. `claude auth status` confirmed
+a logged-in Claude subscription, and the repeated driver made a successful model
+turn with reported cost $0.0183653. Its system initialization listed
+ruflo-console 0.49.0 from the candidate path, but no console tools were registered.
+The model reported console_state, console_open, console_set and console_run
+unavailable. The driver exited 1 with zero console calls. This establishes an
+actual host registration blocker on Claude Code 2.1.283; it does not isolate
+whether the cause is host feature support, configuration or module loading.
+No authorization code or token is included in these artifacts.
+
+Direct Anthropic Managed Agents execution, live budget pauses and fresh remote
+controls remain unvalidated. A Claude subscription login does not establish
+Managed Agents API credentials or beta entitlement. Diagnose the function-hook
+registration path and securely deliver an authorized API key with beta access
+before rerunning the respective console and bounded provider tests.
 
 ## Reproduction and acceptance
 
