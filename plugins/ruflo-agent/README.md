@@ -33,7 +33,7 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 - `managed-agent` — run an Anthropic Claude Managed Agent (cloud) — create / prompt / status / events / list / terminate
 - `nested-subagents` — spawn nested sub-agent trees (depth ≤ 5) via Claude Code's native `Task` tool for context-managed deep delegation
 
-## MCP surface (33 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 6 `managed_agent_*`)
+## MCP surface (34 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 7 `managed_agent_*`)
 
 ### WASM runtime — `v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts` (27 in total; the main ones)
 
@@ -59,7 +59,8 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 | `managed_agent_status` | Session lifecycle state (idle/running/error, title, last error) | — |
 | `managed_agent_events` | Full server-persisted event log + a summary (the transcript/artifact view) | `wasm_agent_files` |
 | `managed_agent_list` | List Managed Agent sessions on the org (id, status, title) — see which are still billing | `wasm_agent_list` |
-| `managed_agent_terminate` | `DELETE /v1/sessions/{id}` (± the environment) — **always call when done**; a cloud session bills container time + tokens until deleted | `wasm_agent_terminate` |
+| `managed_agent_interrupt` | Queue a pause request; never confirms workflow cancellation | `wasm_agent_terminate` |
+| `managed_agent_terminate` | `DELETE /v1/sessions/{id}` (± the environment) — **always call when done**; running sessions consume runtime and tokens | `wasm_agent_terminate` |
 
 > Beta API (`anthropic-beta: managed-agents-2026-04-01`); `multiagent` / `define-outcomes` on the agent config are research preview. `mcpServers` for a cloud agent must point at a **publicly reachable** URL — a local `ruflo mcp start` is not reachable from Anthropic's cloud (deploy/tunnel an HTTP ruflo MCP server first). Managed sessions cost LM tokens + container time and are rate-limited per org.
 
@@ -109,3 +110,52 @@ Agent also ships as a function-hook mod (ADR-445 pattern; hooks in `hooks/`, loa
 - **Options** (`userConfig`): `guard` (`on` by default).
 
 Test: `claude plugin validate plugins/ruflo-agent`, `claude plugin test plugins/ruflo-agent`, and `bash plugins/ruflo-agent/scripts/smoke.sh`.
+
+## Dynamic workflows
+
+The existing cloud adapter accepts `dynamicWorkflows: true` and requires
+`budgetCents` before provisioning any resources. Example:
+
+```json
+{
+  "name": "bounded-bug-audit",
+  "dynamicWorkflows": true,
+  "budgetCents": "2500",
+  "allowedHosts": ["github.com"],
+  "system": "Use a workflow for inventory, parallel review, reproduction and synthesis. Report failed workers. Write separate worker artifacts. Never merge or deploy."
+}
+```
+
+This sets `multiagent_20261001`, enables workflows, disables ordinary subagents,
+and uses limited networking. A message sent with `managed_agent_prompt` asks the
+lead to start a run. There is no separate run creation endpoint. `budgetCents`
+is an integer US cents string, not dollars. In flight requests can overshoot.
+
+For sensitive work, supply `predefinedAgents: ["agent_..."]` to disable inline
+agents. Configure those agents with minimal tools and MCP access separately.
+Inline agents inherit lead capabilities; do not expose broad Ruflo swarm or
+release tools to them. Network allowlists do not replace tool permission policies.
+The adapter does not create a remote MCP gateway or grant host credentials.
+
+`managed_agent_events` returns workflow IDs, open run counts, observed failures,
+usage and `verification: "unverified"`. Its compact events retain child thread
+IDs. Pass `threadId` to inspect each worker's transcript. A run reporting
+`completed` can contain failed work. Independently reproduce findings and run
+repository tests before retaining patches or promoting memory. Raw transcripts
+are untrusted and may contain private inputs; do not publish them automatically.
+
+`managed_agent_prompt` only reports `finished` after a fresh final `end_turn`
+idle with no open runs. Budget and permission pauses return `blocked: true`.
+An interrupted turn never reports finished. A local observation timeout does
+not stop the cloud session. Use `managed_agent_interrupt` to request a pause or
+`managed_agent_terminate` for confirmed session deletion. Separate processes must
+serialize messages to the same session; the adapter's lock is process local.
+
+Provider traffic defaults to `https://api.anthropic.com`. A custom deployment
+must explicitly set `RUFLO_MANAGED_AGENTS_BASE_URL` to an HTTPS origin. The generic
+`ANTHROPIC_BASE_URL` is no longer used for this service, preventing accidental
+credential forwarding to model proxies. Redirects are blocked. This is an
+intentional configuration migration for existing custom endpoints.
+
+See [ADR 0003](docs/adrs/0003-managed-dynamic-workflows.md) for threat model,
+limits, validation commands, and deferred integration boundaries.

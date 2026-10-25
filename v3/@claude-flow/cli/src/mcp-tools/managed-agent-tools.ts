@@ -19,8 +19,16 @@
  */
 
 import type { MCPTool } from './types.js';
+import { dynamicConfig, eventPage, readManagedEvents, ManagedProgress, type ManagedEvent } from '../services/managed-workflows.js';
 
-const API_BASE = process.env.ANTHROPIC_BASE_URL?.replace(/\/$/, '') || 'https://api.anthropic.com';
+// Dedicated override avoids forwarding credentials to a generic model proxy.
+function apiBase(): string {
+  const url = new URL(process.env.RUFLO_MANAGED_AGENTS_BASE_URL || 'https://api.anthropic.com');
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+    throw new Error('Managed Agents endpoint must be an HTTPS origin');
+  }
+  return url.origin;
+}
 const BETA_HEADER = 'managed-agents-2026-04-01';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -50,88 +58,94 @@ async function maRequest<T = unknown>(
   method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body?: unknown,
+  timeoutMs = 30_000,
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; error: string; body?: unknown }> {
   const key = apiKey();
   if (!key) return { ok: false, status: 0, error: NEEDS_KEY.error };
-  let res: Response;
   try {
-    res = await fetch(`${API_BASE}/v1${path}`, {
-      method,
-      headers: headers(key),
+    const res = await fetch(`${apiBase()}/v1${path}`, {
+      method, headers: headers(key), redirect: 'error',
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, 30_000))),
     });
-  } catch (e) {
-    return { ok: false, status: 0, error: `network error calling ${method} /v1${path}: ${(e as Error).message}` };
+    // Never echo upstream bodies: they may contain prompts, keys or MCP tokens.
+    if (!res.ok) { await res.body?.cancel(); return { ok: false, status: res.status, error: `Managed Agents API HTTP ${res.status}` }; }
+    if (res.status === 204) return { ok: true, status: res.status, data: undefined as T };
+    const reader = res.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    if (reader) {
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          bytes += chunk.value.byteLength;
+          if (bytes > 8_000_000) { await reader.cancel(); throw new Error('response limit'); }
+          chunks.push(chunk.value);
+        }
+      } finally { reader.releaseLock(); }
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
+    return { ok: true, status: res.status, data: (text ? JSON.parse(text) : undefined) as T };
+  } catch {
+    return { ok: false, status: 0, error: 'Managed Agents transport or response error; inspect provider status before retrying mutations' };
   }
-  const text = await res.text();
-  let parsed: unknown = undefined;
-  try { parsed = text ? JSON.parse(text) : undefined; } catch { /* leave undefined */ }
-  if (!res.ok) {
-    const apiErr = (parsed as { error?: { message?: string }; message?: string })?.error?.message
-      ?? (parsed as { message?: string })?.message
-      ?? text.slice(0, 300);
-    return { ok: false, status: res.status, error: `Managed Agents API ${res.status}: ${apiErr}`, body: parsed };
-  }
-  return { ok: true, status: res.status, data: parsed as T };
 }
 
 // ---- shapes (only the fields we touch) -----------------------------------
 interface MaAgent { id: string; version?: number; name?: string; model?: { id: string } }
 interface MaEnvironment { id: string; name?: string; config?: unknown }
 interface MaSession { id: string; status?: string; title?: string; error?: string | null; agent?: MaAgent; environment_id?: string }
-interface MaEvent { type: string; content?: Array<{ type: string; text?: string }>; name?: string; input?: unknown; id?: string; processed_at?: string; stop_reason?: { type: string } }
+type MaEvent = ManagedEvent;
 
-// ---- helpers --------------------------------------------------------------
-function summarizeEvents(events: MaEvent[]): {
-  assistantText: string;
-  toolUses: Array<{ name: string; input: unknown }>;
-  status: string;
-  stopReason: string | null;
-  eventCount: number;
-} {
-  let assistantText = '';
-  const toolUses: Array<{ name: string; input: unknown }> = [];
-  let status = 'unknown';
-  let stopReason: string | null = null;
-  for (const e of events) {
-    if (e.type === 'agent.message' && Array.isArray(e.content)) {
-      assistantText += e.content.filter(b => b.type === 'text').map(b => b.text ?? '').join('');
-    } else if (e.type === 'agent.tool_use') {
-      toolUses.push({ name: e.name ?? '?', input: e.input });
-    } else if (e.type === 'session.status_running') {
-      status = 'running';
-    } else if (e.type === 'session.status_idle') {
-      status = 'idle';
-      stopReason = e.stop_reason?.type ?? null;
-    } else if (e.type === 'session.status_error' || e.type === 'session.status_failed') {
-      status = 'error';
-    }
-  }
-  return { assistantText, toolUses, status, stopReason, eventCount: events.length };
+function summarizeEvents(events: MaEvent[]) {
+  const progress = new ManagedProgress();
+  progress.accept(events);
+  return progress.snapshot();
 }
 
-async function fetchSessionEvents(sessionId: string): Promise<MaEvent[]> {
-  const r = await maRequest<{ data?: MaEvent[]; events?: MaEvent[] }>('GET', `/sessions/${encodeURIComponent(sessionId)}/events`);
-  if (!r.ok) return [];
-  const d = r.data;
-  return (d.data ?? d.events ?? []) as MaEvent[];
+async function fetchSessionEvents(sessionId: string, since?: string, threadId?: string, deadline = Date.now() + 30_000): Promise<MaEvent[]> {
+  return readManagedEvents(async query => {
+    const thread = threadId ? `/threads/${encodeURIComponent(threadId)}` : '';
+    const params = new URLSearchParams(query);
+    if (threadId) { params.delete('order'); params.delete('created_at[gte]'); }
+    if (Date.now() >= deadline) throw new Error('Managed Agents observation deadline reached');
+    const r = await maRequest('GET', `/sessions/${encodeURIComponent(sessionId)}${thread}/events?${params}`, undefined, deadline - Date.now());
+    if (!r.ok) throw new Error(r.error);
+    return r.data;
+  }, since);
 }
 
-// Wait until the session is no longer "running": poll the event log for a
-// terminal session.status_* event. Bounded by maxWaitMs.
-async function waitForIdle(sessionId: string, maxWaitMs: number): Promise<{ done: boolean; events: MaEvent[] }> {
+// Gate new-turn observations on the provider's acknowledged message ID, not
+// on a local timestamp or a historical idle event. Calls are serialized locally.
+const pendingPrompts = new Set<string>();
+async function waitForIdle(sessionId: string, maxWaitMs: number, messageId: string) {
   const deadline = Date.now() + Math.max(1_000, Math.min(maxWaitMs, 600_000));
-  let events: MaEvent[] = [];
+  const progress = new ManagedProgress();
+  let started = false;
   while (Date.now() < deadline) {
-    events = await fetchSessionEvents(sessionId);
-    const terminal = events.some(e => e.type === 'session.status_idle' || e.type === 'session.status_error' || e.type === 'session.status_failed');
-    // Also stop early if the session record itself reports a non-running status
-    if (terminal) return { done: true, events };
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    const events = await fetchSessionEvents(sessionId, started ? progress.watermark() : undefined, undefined, deadline);
+    if (!started) {
+      const boundary = events.findIndex(e => e.id === messageId && !!e.processed_at);
+      if (boundary >= 0) {
+        // Existing runs remain relevant when a user steers an active session.
+        const prior = new ManagedProgress();
+        const history = events.slice(0, boundary).filter(e => e.type.startsWith('workflow_run.'));
+        prior.accept(history);
+        const open = new Set(prior.snapshot().workflowRuns.filter(r => r.status !== 'ended').map(r => r.id));
+        progress.accept(history.filter(e => e.workflow_run_id && open.has(e.workflow_run_id)));
+        progress.accept(events.slice(boundary));
+        started = true;
+      }
+    } else progress.accept(events);
+    const state = progress.snapshot();
+    if (started && (state.finished || state.blocked || (state.interrupted && state.status === 'idle') || state.status === 'terminated')) return state;
+    await new Promise(r => setTimeout(r, Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))));
   }
-  return { done: false, events };
+  return progress.snapshot();
 }
+
+function definiteRejection(status: number): boolean { return [400, 401, 403, 404, 422].includes(status); }
 
 function maName(prefix: string, given?: unknown): string {
   if (typeof given === 'string' && given.trim()) return given.trim().slice(0, 80);
@@ -144,7 +158,7 @@ export const managedAgentTools: MCPTool[] = [
   {
     name: 'managed_agent_create',
     description:
-      'Spin up an Anthropic-managed cloud agent (Agent + Environment + Session) — the CLOUD counterpart of wasm_agent_create. Use when wasm_agent_create (local WASM sandbox) is wrong because the task is long-running/async (minutes-hours), needs a real cloud container with pre-installed packages + network, or persistent filesystem + transcript across turns. For a fast, free, ephemeral, offline agent use wasm_agent_create (rvagent). Needs ANTHROPIC_API_KEY + Managed Agents beta access. Returns {sessionId, agentId, environmentId}; pair with managed_agent_prompt.',
+      'Spin up an Anthropic-managed cloud agent (Agent + Environment + Session) — the CLOUD counterpart of wasm_agent_create. Use when wasm_agent_create (local WASM sandbox) is wrong because the task is long-running/async (minutes-hours), needs a real cloud container with pre-installed packages + network, or persistent filesystem + transcript across turns. For a fast, free, ephemeral, offline agent use wasm_agent_create (rvagent). Needs ANTHROPIC_API_KEY + Managed Agents beta access. Opt into dynamic workflows with dynamicWorkflows=true and mandatory budgetCents (integer US cents); networking is then limited. Returns {sessionId, agentId, environmentId}; pair with managed_agent_prompt.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -160,12 +174,19 @@ export const managedAgentTools: MCPTool[] = [
         },
         skills: { type: 'array', description: 'Skills to attach to the agent', items: { type: 'object' } },
         packages: { type: 'object', description: 'Environment packages: {pip?:[], npm?:[], apt?:[], cargo?:[], gem?:[], go?:[]}' },
-        networking: { type: 'string', enum: ['unrestricted', 'restricted', 'none'], description: 'Environment networking (default: unrestricted)' },
+        networking: { type: 'string', enum: ['unrestricted', 'restricted', 'none', 'limited'], description: 'Legacy default unrestricted; dynamic workflows require limited' },
+        dynamicWorkflows: { type: 'boolean', description: 'Opt in to multiagent_20261001 dynamic workflows (requires budgetCents)' },
+        budgetCents: { type: 'string', pattern: '^[1-9][0-9]{0,8}$', description: 'Positive integer US cents string; 2500 means $25; in-flight requests may overshoot' },
+        allowedHosts: { type: 'array', items: { type: 'string' }, description: 'Exact allowed hostnames for dynamic workflow limited networking' },
+        predefinedAgents: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'string' }, description: 'Restrict workflows to these agent IDs; disables inline agents' },
         initScript: { type: 'string', description: 'Environment init script (bash, run at container start)' },
       },
     },
     handler: async (input) => {
       if (!apiKey()) return { success: false, ...NEEDS_KEY };
+
+      let config: ReturnType<typeof dynamicConfig>;
+      try { config = dynamicConfig(input); } catch (error) { return { success: false, error: (error as Error).message }; }
 
       // 1. Agent
       const agentBody: Record<string, unknown> = {
@@ -174,30 +195,44 @@ export const managedAgentTools: MCPTool[] = [
         tools: [{ type: 'agent_toolset_20260401' }],
       };
       if (typeof input.system === 'string') agentBody.system = input.system;
+      if (config.multiagent) agentBody.multiagent = config.multiagent;
       if (Array.isArray(input.mcpServers) && input.mcpServers.length) agentBody.mcp_servers = input.mcpServers;
       if (Array.isArray(input.skills) && input.skills.length) agentBody.skills = input.skills;
       const a = await maRequest<MaAgent>('POST', '/agents', agentBody);
       if (!a.ok) return { success: false, stage: 'agent', error: a.error };
+      if (!a.data || typeof a.data.id !== 'string' || !/^agent_[A-Za-z0-9]+$/.test(a.data.id)) return { success: false, stage: 'agent', error: 'Invalid agent acknowledgement; inspect provider resources before retrying' };
 
       // 2. Environment
-      const net = (input.networking as string) || 'unrestricted';
       const envBody: Record<string, unknown> = {
         name: maName('ruflo-managed-env', input.name),
-        config: { type: 'cloud', networking: { type: net } },
+        config: { type: 'cloud', networking: config.networking },
       };
       if (input.packages && typeof input.packages === 'object') (envBody.config as Record<string, unknown>).packages = { type: 'packages', ...(input.packages as object) };
       if (typeof input.initScript === 'string' && input.initScript) (envBody.config as Record<string, unknown>).init_script = input.initScript;
       const e = await maRequest<MaEnvironment>('POST', '/environments', envBody);
-      if (!e.ok) return { success: false, stage: 'environment', agentId: a.data.id, error: e.error };
+      if (!e.ok) {
+        if (!definiteRejection(e.status)) return { success: false, stage: 'environment', agentId: a.data.id, error: e.error, cleanupRequired: true };
+        const cleanup = await maRequest('DELETE', `/agents/${encodeURIComponent(a.data.id)}`);
+        return { success: false, stage: 'environment', agentId: a.data.id, error: e.error, agentDeleted: cleanup.ok };
+      }
+
+      if (!e.data || typeof e.data.id !== 'string' || !/^env_[A-Za-z0-9]+$/.test(e.data.id)) return { success: false, stage: 'environment', agentId: a.data.id, error: 'Invalid environment acknowledgement; inspect provider resources before retrying', cleanupRequired: true };
 
       // 3. Session
       const s = await maRequest<MaSession>('POST', '/sessions', {
         agent: a.data.id,
         environment_id: e.data.id,
         title: maName('ruflo-managed session', input.title),
+        ...(config.budget ? { budget: config.budget } : {}),
       });
-      if (!s.ok) return { success: false, stage: 'session', agentId: a.data.id, environmentId: e.data.id, error: s.error };
+      if (!s.ok) {
+        if (!definiteRejection(s.status)) return { success: false, stage: 'session', agentId: a.data.id, environmentId: e.data.id, error: s.error, cleanupRequired: true };
+        const envCleanup = await maRequest('DELETE', `/environments/${encodeURIComponent(e.data.id)}`);
+        const agentCleanup = await maRequest('DELETE', `/agents/${encodeURIComponent(a.data.id)}`);
+        return { success: false, stage: 'session', agentId: a.data.id, environmentId: e.data.id, error: s.error, environmentDeleted: envCleanup.ok, agentDeleted: agentCleanup.ok };
+      }
 
+      if (!s.data || typeof s.data.id !== 'string' || !/^sesn_[A-Za-z0-9]+$/.test(s.data.id)) return { success: false, stage: 'session', agentId: a.data.id, environmentId: e.data.id, error: 'Invalid session acknowledgement; inspect provider resources before retrying', cleanupRequired: true };
       return {
         success: true,
         runtime: 'managed',
@@ -207,7 +242,10 @@ export const managedAgentTools: MCPTool[] = [
         environmentId: e.data.id,
         status: s.data.status ?? 'idle',
         model: agentBody.model,
-        note: 'Cloud agent provisioned. Send work with managed_agent_prompt({sessionId, message}); inspect with managed_agent_events; clean up with managed_agent_terminate (it bills container time + tokens until you do).',
+        dynamicWorkflows: config.enabled,
+        budget: config.budget,
+        verification: 'unverified',
+        note: 'Cloud agent provisioned. Send work with managed_agent_prompt({sessionId, message}); inspect with managed_agent_events; clean up with managed_agent_terminate (running sessions consume runtime and tokens).',
       };
     },
   },
@@ -232,28 +270,26 @@ export const managedAgentTools: MCPTool[] = [
       if (!sessionId) return { success: false, error: 'sessionId is required' };
       if (!message) return { success: false, error: 'message is required' };
 
-      const send = await maRequest('POST', `/sessions/${encodeURIComponent(sessionId)}/events`, {
-        events: [{ type: 'user.message', content: [{ type: 'text', text: message }] }],
-      });
-      if (!send.ok) return { success: false, stage: 'send', sessionId, error: send.error };
-
-      const maxWait = typeof input.maxWaitMs === 'number' && input.maxWaitMs > 0 ? input.maxWaitMs : DEFAULT_MAX_WAIT_MS;
-      const { done, events } = await waitForIdle(sessionId, maxWait);
-      const sum = summarizeEvents(events);
-      return {
-        success: true,
-        runtime: 'managed',
-        sessionId,
-        finished: done,
-        status: sum.status,
-        stopReason: sum.stopReason,
-        assistantText: sum.assistantText,
-        toolUses: sum.toolUses,
-        eventCount: sum.eventCount,
-        note: done
-          ? undefined
-          : `Session still running after ${maxWait}ms — call managed_agent_events({sessionId}) to keep watching, or managed_agent_prompt again to steer.`,
-      };
+      if (input.maxWaitMs !== undefined && (typeof input.maxWaitMs !== 'number' || !Number.isFinite(input.maxWaitMs) || input.maxWaitMs <= 0)) return { success: false, error: 'maxWaitMs must be finite and positive' };
+      if (pendingPrompts.has(sessionId)) return { success: false, error: 'A prompt is already pending for this session' };
+      pendingPrompts.add(sessionId);
+      try {
+        const send = await maRequest('POST', `/sessions/${encodeURIComponent(sessionId)}/events`, {
+          events: [{ type: 'user.message', content: [{ type: 'text', text: message }] }],
+        });
+        if (!send.ok) return { success: false, stage: 'send', sessionId, error: send.error };
+        const sent = eventPage(send.data).data.find(e => e.type === 'user.message');
+        if (!sent) return { success: false, sessionId, error: 'Missing message acknowledgement; inspect events before retrying' };
+        const maxWait = typeof input.maxWaitMs === 'number' ? input.maxWaitMs : DEFAULT_MAX_WAIT_MS;
+        const state = await waitForIdle(sessionId, maxWait, sent.id);
+        return {
+          success: state.observedFailures === 0 && state.status !== 'terminated',
+          runtime: 'managed', sessionId, messageId: sent.id, ...state,
+          note: 'Provider output is unverified. Inspect workflow threads and independently test artifacts. A wait timeout does not stop remote execution; inspect events or terminate explicitly.',
+        };
+      } catch (error) {
+        return { success: false, sessionId, finished: false, error: (error as Error).message };
+      } finally { pendingPrompts.delete(sessionId); }
     },
   },
   {
@@ -280,6 +316,7 @@ export const managedAgentTools: MCPTool[] = [
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: 'Session id' },
+        threadId: { type: 'string', description: 'Optional child thread ID from session.thread_created; inspect worker failures' },
         raw: { type: 'boolean', description: 'Include the full raw event objects (default: summary + compact list)' },
       },
       required: ['sessionId'],
@@ -288,22 +325,19 @@ export const managedAgentTools: MCPTool[] = [
       if (!apiKey()) return { ...NEEDS_KEY };
       const sessionId = String(input.sessionId ?? '');
       if (!sessionId) return { error: 'sessionId is required' };
-      const events = await fetchSessionEvents(sessionId);
+      let events: MaEvent[];
+      try { events = await fetchSessionEvents(sessionId, undefined, typeof input.threadId === 'string' ? input.threadId : undefined); } catch (error) { return { success: false, sessionId, error: (error as Error).message }; }
       const sum = summarizeEvents(events);
       const compact = events.map(e => {
-        if (e.type === 'agent.message') return { type: e.type, text: (e.content ?? []).filter(b => b.type === 'text').map(b => b.text ?? '').join('').slice(0, 500) };
+        if (e.type === 'agent.message') return { type: e.type, text: (e.content ?? []).filter(b => b?.type === 'text').map(b => b.text ?? '').join('').slice(0, 500) };
         if (e.type === 'agent.tool_use') return { type: e.type, name: e.name, input: e.input };
         if (e.type === 'agent.tool_result') return { type: e.type, content: JSON.stringify(e.content ?? {}).slice(0, 500) };
-        return { type: e.type, ...(e.stop_reason ? { stop_reason: e.stop_reason } : {}) };
+        return { id: e.id, type: e.type, workflowRunId: e.workflow_run_id, threadId: e.session_thread_id, result: e.result, ...(e.stop_reason ? { stop_reason: e.stop_reason } : {}) };
       });
       return {
         runtime: 'managed',
         sessionId,
-        status: sum.status,
-        stopReason: sum.stopReason,
-        assistantText: sum.assistantText,
-        toolUses: sum.toolUses,
-        eventCount: sum.eventCount,
+        ...sum,
         events: input.raw ? events : compact,
       };
     },
@@ -328,9 +362,21 @@ export const managedAgentTools: MCPTool[] = [
     },
   },
   {
+    name: 'managed_agent_interrupt',
+    description: 'Request an interrupt for an Anthropic managed session. Use when native interruption cannot reach the remote cloud runtime; for local WASM use wasm_agent_terminate. This queues a pause, does not end workflow runs, and never confirms cancellation. Inspect managed_agent_events or explicitly terminate the session.',
+    category: 'agent',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string', description: 'Managed session to interrupt' } }, required: ['sessionId'] },
+    handler: async input => {
+      if (!apiKey()) return { success: false, ...NEEDS_KEY };
+      if (typeof input.sessionId !== 'string' || !input.sessionId) return { success: false, error: 'sessionId is required' };
+      const r = await maRequest('POST', `/sessions/${encodeURIComponent(input.sessionId)}/events`, { events: [{ type: 'user.interrupt' }] });
+      return { success: r.ok, sessionId: input.sessionId, interruptRequested: r.ok, cancellationConfirmed: false, ...(!r.ok ? { error: r.error } : {}) };
+    },
+  },
+  {
     name: 'managed_agent_terminate',
     description:
-      'Delete a managed cloud-agent session (stops billing for it) — the CLOUD counterpart of wasm_agent_terminate. Use when native nothing applies because a cloud session keeps billing container time + tokens until deleted. For a local WASM agent use wasm_agent_terminate. Optionally also deletes the session\'s environment. Always call this when done with a managed agent.',
+      'Delete a managed cloud-agent session (stops billing for it) — the CLOUD counterpart of wasm_agent_terminate. Use when native nothing applies because a running cloud session consumes runtime and tokens. For a local WASM agent use wasm_agent_terminate. Optionally also deletes the session\'s environment. Always call this when done with a managed agent.',
     category: 'agent',
     inputSchema: {
       type: 'object',
@@ -347,12 +393,12 @@ export const managedAgentTools: MCPTool[] = [
       const s = await maRequest('DELETE', `/sessions/${encodeURIComponent(sessionId)}`);
       const result: Record<string, unknown> = { runtime: 'managed', sessionId, sessionDeleted: s.ok };
       if (!s.ok) result.error = s.error;
-      if (typeof input.environmentId === 'string' && input.environmentId) {
+      if (s.ok && typeof input.environmentId === 'string' && input.environmentId) {
         const e = await maRequest('DELETE', `/environments/${encodeURIComponent(String(input.environmentId))}`);
         result.environmentDeleted = e.ok;
         if (!e.ok) result.environmentError = e.error;
       }
-      result.success = s.ok;
+      result.success = s.ok && result.environmentDeleted !== false;
       return result;
     },
   },

@@ -88,11 +88,11 @@ for f in "$ROOT"/skills/*/SKILL.md; do
 done
 [[ -z "$bad_skills" ]] && ok || bad "wildcard:$bad_skills"
 
-step "12. managed-agent (cloud runtime) skill + command + all 6 managed_agent_* tools referenced (ADR-115)"
+step "12. managed-agent (cloud runtime) skill + command + all 7 managed_agent_* tools referenced (ADR-115)"
 miss=""
 [[ -f "$ROOT/skills/managed-agent/SKILL.md" ]] || miss="$miss missing-skill"
 [[ -f "$ROOT/commands/managed-agent.md" ]] || miss="$miss missing-command"
-for t in managed_agent_create managed_agent_prompt managed_agent_status managed_agent_events managed_agent_list managed_agent_terminate; do
+for t in managed_agent_create managed_agent_prompt managed_agent_status managed_agent_events managed_agent_list managed_agent_terminate managed_agent_interrupt; do
   grep -rq "$t" "$ROOT/skills" "$ROOT/commands" || miss="$miss no-ref-$t"
 done
 # the cloud-runtime skill must keep an explicit allowed-tools list (no wildcard) and offer the wasm fallback

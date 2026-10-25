@@ -14,6 +14,7 @@ const TOOL_NAMES = [
   'managed_agent_events',
   'managed_agent_list',
   'managed_agent_terminate',
+  'managed_agent_interrupt',
 ] as const;
 
 const tool = (name: string) => {
@@ -37,7 +38,7 @@ describe('ADR-115 — managed_agent_* MCP tools', () => {
     if (prevClaude === undefined) delete process.env.CLAUDE_API_KEY; else process.env.CLAUDE_API_KEY = prevClaude;
   });
 
-  it('registers exactly the six managed_agent_* tools', () => {
+  it('registers exactly the seven managed_agent_* tools', () => {
     const names = managedAgentTools.map(t => t.name).sort();
     expect(names).toEqual([...TOOL_NAMES].sort());
   });

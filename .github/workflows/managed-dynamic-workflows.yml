@@ -1,0 +1,35 @@
+name: Managed dynamic workflows contract
+on:
+  pull_request:
+    paths:
+      - 'v3/@claude-flow/cli/src/mcp-tools/managed-agent-tools.ts'
+      - 'v3/@claude-flow/cli/src/services/managed-workflows.ts'
+      - 'v3/@claude-flow/cli/__tests__/managed*.test.ts'
+      - 'plugins/ruflo-agent/**'
+      - '.github/workflows/managed-dynamic-workflows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated test tooling without lifecycle scripts
+        run: |
+          npm install --prefix "$RUNNER_TEMP/managed-tools" --ignore-scripts --no-audit --no-fund vitest@3.2.6 typescript@5.9.3 @types/node@22 @claude-flow/cli-core@3.7.5
+          ln -s "$RUNNER_TEMP/managed-tools/node_modules" node_modules
+      - name: Type check the adapter boundary
+        run: node node_modules/typescript/lib/tsc.js --target es2022 --module nodenext --moduleResolution nodenext --strict --skipLibCheck --types node --noEmit v3/@claude-flow/cli/src/mcp-tools/managed-agent-tools.ts
+      - name: Offline provider and adjacent workflow regressions
+        working-directory: v3/@claude-flow/cli
+        run: node ../../../node_modules/vitest/vitest.mjs run --config vitest.config.ts __tests__/managed-agent-tools.test.ts __tests__/managed-workflows.test.ts __tests__/workflow-validation-runtime.test.ts __tests__/workflow-resume-dispatch-r50.test.ts __tests__/workflow-progress-ownership-r50.test.ts
+      - name: Plugin and registration contracts
+        run: |
+          bash plugins/ruflo-agent/scripts/smoke.sh
+          bash plugins/ruflo-workflows/scripts/smoke.sh
+          node scripts/audit-cli-mcp-tools.mjs
