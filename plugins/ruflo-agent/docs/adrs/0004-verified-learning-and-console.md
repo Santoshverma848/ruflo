@@ -247,6 +247,16 @@ verify host manifest and measurements
 The existing managed_agent_learning operation gains action=cycle with one
 closed cycle object. The host flag and configured verifier key are checked
 again across phase boundaries; a caller approval or promotion flag is rejected.
+Indexing cycles with more than six training outcomes are rejected before any
+write; the 24 outcome admission bound still applies to non-indexing cycles.
+The worker permits one active operation with no queue, a 15 second operation
+timeout and five second idle expiry. Host authorization is rechecked after native
+initialization and immediately before an append grant. Revocation after a granted
+write can report an admitted-write ambiguity; it cannot promise to undo that write.
+The child strips provider credentials and configures the actual AgentDB
+Transformers.js module to disable remote model loading before native startup.
+These controls do not constitute an OS memory or network sandbox.
+
 Per-attempt immutability makes replay safe. A failure after batch persistence
 leaves durable evidence that can be retried, not a false claim that later phases
 completed. Native insertion replay must verify the existing exact scoped row
@@ -288,3 +298,12 @@ Linux ruOS, local CPU fixtures and CI have separate receipts. Windows/macOS
 durability, production verifier operation and a live provider canary remain
 explicit release gates until actual results exist. Disable learning/control
 flags to stop effects; no automatic policy or memory migration is introduced.
+
+Validation update, 2026-10-25: [feedback cycle report](../../../../docs/validation/managed-loop-e2e.md)
+and [ruOS receipt](../../../../docs/validation/managed-loop-ruos.json) record 199
+backend tests, 150 console tests, 86 verifier-loop assertions, source and emitted
+JavaScript native persistence/restart recall, and the real MCP learning cycle.
+The fixed-fixture batch benchmark reduced 18 transactions to one, with 7.29 times
+lower median admission time. This measures ledger overhead, not provider quality
+or cost savings. No routing default was promoted. Live provider, production
+verifier and cross-platform release gates remain open.

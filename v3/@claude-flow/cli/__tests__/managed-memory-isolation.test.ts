@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fork, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import ts from 'typescript';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -100,10 +101,13 @@ describe('actual child lifecycle containment', () => {
     await expect(client.run(cwd, request, () => false)).rejects.toThrow('policy denied');
     expect(launch).not.toHaveBeenCalled();
   });
-  it('runs the fixed source worker and returns a structured invalid-schema failure without loading native code', async () => {
-    const child = fork(new URL('../src/services/managed-memory-worker.ts', import.meta.url), [], { cwd: root(), execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  it('runs the emitted fixed worker on supported Node versions without loading native code for invalid input', async () => {
+    const cwd = root(), entry = join(cwd, 'fixed-worker.mjs');
+    const source = readFileSync(new URL('../src/services/managed-memory-worker.ts', import.meta.url), 'utf8');
+    writeFileSync(entry, ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
+    const child = fork(entry, [], { cwd, execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     try {
-      const response = new Promise<any>((resolve, reject) => { child.once('message', resolve); child.once('error', reject); });
+      const response = new Promise<any>((resolve, reject) => { child.once('message', resolve); child.once('error', reject); child.once('exit', () => reject(new Error('Fixed worker exited before response'))); });
       child.send({ operation: 'eval', command: 'ignored' });
       await expect(response).resolves.toEqual({ v: 1, ok: false, error: 'invalid-request' });
     } finally { child.kill('SIGKILL'); }

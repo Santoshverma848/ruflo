@@ -1,7 +1,7 @@
 /** Real verifier subprocess + real ledger services; costs/workloads are synthetic fixtures. */
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,10 @@ const pair = generateKeyPairSync('ed25519');
 const publicKey = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString();
 const privatePath = join(keys, 'verifier.pem');
 writeFileSync(privatePath, pair.privateKey.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 });
+// Hosted tool-cache executables can be group-writable. Keep the verifier's
+// executable policy intact by staging an owner-only fixture binary.
+const fixtureNode = join(keys, 'node-fixture');
+copyFileSync(process.execPath, fixtureNode); chmodSync(fixtureNode, 0o700);
 const verifier = join(dirname(fileURLToPath(import.meta.url)), 'managed-outcome-verifier.mjs');
 let assertions = 0;
 const check = (condition: unknown, message: string) => { assert.ok(condition, message); assertions++; };
@@ -29,7 +33,7 @@ const artifact = JSON.parse(fs.readFileSync('artifact.json', 'utf8'));
 const task = JSON.parse(fs.readFileSync('task.json', 'utf8'));
 const solve = x => { if (!Number.isInteger(x) || x < 0 || x > 100) throw Error('invalid'); return x * 2; };
 const kind = process.argv[2];
-if (kind === 'acceptance') { if (artifact.strategy === 'baseline') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150); assert.equal(artifact.output, task.expected); }
+if (kind === 'acceptance') { if (artifact.strategy === 'baseline') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000); assert.equal(artifact.output, task.expected); }
 else if (kind === 'safety') { assert.deepEqual(Object.keys(artifact).sort(), ['output','strategy','x']); assert.ok(Number.isSafeInteger(artifact.output)); assert.equal(process.env.RUFLO_MANAGED_VERIFIER_PRIVATE_KEY_FILE, undefined); }
 else if (kind === 'replay') { assert.equal(solve(artifact.x), solve(artifact.x)); assert.equal(solve(artifact.x), artifact.output); }
 else if (kind === 'adversarial') { for (const x of ['injection', -1, 101, null]) assert.throws(() => solve(x)); }
@@ -45,7 +49,7 @@ json(join(root, 'evaluator.json'), { v: 1, measures: 'functional fixture checks,
 const heldTasks = [{ id: 'held-one', x: 5, expected: 10 }, { id: 'held-two', x: 7, expected: 14 }];
 const manifest = manifestOf({ taskHashes: heldTasks.map(digest), trials: [0, 1, 2] });
 json(join(root, 'corpus.json'), manifest);
-const command = (kind: string) => ({ argv: [process.execPath, join(root, 'check.cjs'), kind], cwd: '.', timeoutMs: 3000 });
+const command = (kind: string) => ({ argv: [fixtureNode, join(root, 'check.cjs'), kind], cwd: '.', timeoutMs: 3000 });
 let lastManifest: HostManifest;
 function prepare(task: { id: string; x: number; expected: number }, strategyId: string, split: 'train' | 'holdout', trial: number): HostManifest {
   json(join(root, 'task.json'), task);
@@ -117,6 +121,8 @@ try {
   const cost = JSON.parse(readFileSync(join(root, 'cost.json'), 'utf8')); cost.taskHash = digest('wrong-task'); json(join(root, 'cost.json'), cost); invoke(false);
   prepare({ id: 'bad-command', x: 2, expected: 4 }, 'candidate', 'train', 12);
   lastManifest!.checks.acceptance[0]!.argv[0] = 'node'; json(join(root, 'host-manifest.json'), lastManifest!); invoke(false);
+  prepare({ id: 'unsafe-executable', x: 2, expected: 4 }, 'candidate', 'train', 12);
+  chmodSync(fixtureNode, 0o770); invoke(false); chmodSync(fixtureNode, 0o700);
   prepare({ id: 'shell-command', x: 2, expected: 4 }, 'candidate', 'train', 12);
   lastManifest!.checks.acceptance[0]!.argv = ['/bin/sh', '-c', 'exit 0']; json(join(root, 'host-manifest.json'), lastManifest!); invoke(false);
   prepare({ id: 'bad-cwd', x: 2, expected: 4 }, 'candidate', 'train', 13);

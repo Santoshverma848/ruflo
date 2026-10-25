@@ -17,12 +17,15 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['20', '22']
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
       - name: Install isolated test tooling without lifecycle scripts
         run: |
           npm install --prefix "$RUNNER_TEMP/managed-tools" --ignore-scripts --no-audit --no-fund vitest@3.2.6 typescript@5.9.3 @types/node@22 @claude-flow/cli-core@3.7.5

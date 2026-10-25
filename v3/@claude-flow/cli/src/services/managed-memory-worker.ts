@@ -2,6 +2,8 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const NAMESPACE = 'managed-workflow-evidence';
 const HASH = /^[a-f0-9]{64}$/;
@@ -69,6 +71,19 @@ function databasePath(): string {
 }
 
 async function loadNative(dbPath: string): Promise<NativeMemoryAdapter> {
+  // Transformers.js does not consistently honor the Python offline env flags.
+  // Configure the exact module identity AgentDB loads, before registry init.
+  const require = createRequire(import.meta.url);
+  const memoryEntry = require.resolve('@claude-flow/memory');
+  const agentEntry = createRequire(memoryEntry).resolve('agentdb');
+  const owner = createRequire(agentEntry);
+  for (const name of ['@huggingface/transformers', '@xenova/transformers']) {
+    let path: string;
+    try { path = owner.resolve(name); } catch { continue; }
+    const modulePath = pathToFileURL(path).href;
+    const model = await import(modulePath) as { env?: { allowRemoteModels: boolean } };
+    if (model.env) model.env.allowRemoteModels = false;
+  }
   const js = new URL('../memory/memory-bridge.js', import.meta.url);
   const moduleUrl = existsSync(fileURLToPath(js)) ? js : new URL('../memory/memory-bridge.ts', import.meta.url);
   // Deliberately nonliteral import: targeted boundary builds do not pull the
