@@ -2,6 +2,13 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-ai-team`.
 
+## 0.3.5 — 2026-10-24
+- feat: the guard also screens `team_create` and `team_update` (team name, objective and roles are shared, retained text like task and memory writes); read tools stay unguarded
+- feat: `/team-remember` and `/team-board` commands (memory store/search and the board view)
+- feat: each skill ends with the skill to use next (launch, coordinate, monitor, review, lifecycle, remember), so the six read as one workflow
+- feat: the builder, researcher and verifier agents say how a ruflo coder, researcher or reviewer agent does the work while the service only records it, and that the builder never verifies its own result
+- chore: smoke expects six commands; directory bundle resynced (0.2.0 to 0.3.0)
+
 ## 0.3.4 — 2026-10-24
 - fix: run and team lists read newest first, so a tenant with more than 100 runs sees its latest runs on the board instead of an arbitrary 100
 - fix: evidence exports query audit events by target instead of reading the first 1000 audit records and filtering, which dropped a run's events once a tenant had more audit history than that
