@@ -74,7 +74,7 @@ def analyze(plan_record, selection, rows):
             'limitations': ['Descriptive SDK-reported list-cost and host-oracle scores, not invoice audit.',
                             'No separately signed registration/oracle chain and no established independent task families.',
                             'The selected prompt may be a better static default; no separate static-best control executed.',
-                            'The v1 prompt omitted the exact VM runtime contract; TextEncoder/URLSearchParams are absent.',
+                            ('The v1 prompt omitted the exact VM runtime contract; TextEncoder/URLSearchParams are absent.' if plan.get('version',1)==1 else 'The v2 prompt declared core ECMAScript and explicit finite JSON signatures; recorded oracle validity remains conditional on its implemented cases.'),
                             'The selector uses float USD; native managed learning uses integer cents and was not this selector.',
                             'Cost-only observations cannot satisfy the preregistered quality-lift proof gate.']}
 

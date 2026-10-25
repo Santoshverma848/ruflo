@@ -137,3 +137,21 @@ This is a distinct optimization objective, not a relaxation of the quality-lift
 gate. The Python actor selector is not native Ruflo learning; integer-cent native
 cost precision remains an integration gap for subcent model calls. No automatic
 policy or routing promotion is granted.
+
+The [fresh v2 confirmation](../../../../docs/validation/managed-actor-pilot-v2.md)
+completed 98 actual calls for $0.4765472 reported cost with 30/30 declared passes
+in each audit arm. Learned cost was 24.739% lower than fixed (22 paired cost wins,
+8 losses, p=.0080624), and 10.231% lower than random (15 wins, 15 losses,
+p=.5722322). The frozen endpoint requires both comparisons, so **overall failed**.
+No quality-lift, general agent intelligence or context-adaptive routing claim is
+made. The exact executed manifest and source are archived; later wording changes
+and v3 oracle hardening are not retroactive confirmation evidence.
+
+Prospective continuation must register the entire model/tool search family and
+alpha spending before fresh audit access. Do not repeat .025 comparisons until a
+positive appears. The next v3 oracle fixes nonfinite/toJSON coercion and mutable
+intrinsics with offline tests; a new model/Agent Booster transfer requires fresh
+source-bound execution. Native cost precision remains unresolved: integer-cent
+observations cannot faithfully rank subcent actor calls. A precise, versioned
+native cost contract and independently signed native-admission receipts need a
+new implementation and fresh experiment rather than reconstructed provenance.

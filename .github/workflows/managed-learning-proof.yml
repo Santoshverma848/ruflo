@@ -37,7 +37,10 @@ jobs:
           node "$RUNNER_TEMP/proof-build/scripts/e2e-managed-proof.mjs" > "$RUNNER_TEMP/managed-proof-result.json"
           cat "$RUNNER_TEMP/managed-proof-result.json"
       - name: Offline actor and oracle hardening regressions
-        run: python3 -m unittest discover -s scripts/managed-proof -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s scripts/managed-proof -p 'test_*.py'
+          python3 scripts/managed-proof/booster-transfer/test_transfer.py
+          node --check scripts/managed-proof/booster-transfer/booster_apply.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: managed-proof-node-${{ matrix.node }}

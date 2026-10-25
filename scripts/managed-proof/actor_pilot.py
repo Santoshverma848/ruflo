@@ -1,6 +1,6 @@
 """Hardened opt-in host pilot. Independent from managed MCP and proof admission.
 
-The archived v1 is the exact executed campaign source. This runner is a new
+The archived v1/v2 files preserve exact executed campaign source. This is a new
 version: freeze a fresh campaign and runtime contract before using it. No model
 output is executed outside bubblewrap. Reported list cost is not a billing audit.
 """
@@ -31,20 +31,70 @@ def measured_cost(raw):
 
 
 def sandbox_source(code, cases):
-    # Construct arguments INSIDE the VM realm. Host-realm object injection gives
-    # untrusted code an unnecessary constructor bridge. The OS boundary is bwrap.
+    # Capture trusted realm intrinsics BEFORE generated code and return only a
+    # serialized primitive across the VM boundary. Never invoke user toJSON,
+    # getters or JSON coercion of NaN/Infinity into null.
+    prelude = r"""(()=>{
+      const stringify=JSON.stringify,parse=JSON.parse,apply=Reflect.apply;
+      const descriptors=Object.getOwnPropertyDescriptors,keys=Reflect.ownKeys;
+      const proto=Object.getPrototypeOf,objectProto=Object.prototype,arrayProto=Array.prototype;
+      const isArray=Array.isArray,isFinite=Number.isFinite,isSafeInteger=Number.isSafeInteger;
+      const hasOwn=Object.hasOwn,make=Object.create,define=Object.defineProperty;
+      let solveFunction;
+      function encode(root){
+        let nodes=0;const ancestors=make(null);
+        function visit(value,depth){
+          if(++nodes>10000||depth>32)throw Error('JSON bound');
+          if(value===null||typeof value==='string'||typeof value==='boolean')return stringify(value);
+          if(typeof value==='number'){if(!isFinite(value))throw Error('Nonfinite JSON');return stringify(value);}
+          if(typeof value!=='object')throw Error('Non JSON value');
+          for(let i=0;i<depth;i++)if(ancestors[i]===value)throw Error('Cyclic JSON');
+          ancestors[depth]=value;
+          const props=descriptors(value),names=keys(props);let out;
+          if(isArray(value)){
+            if(proto(value)!==arrayProto||!hasOwn(props,'length'))throw Error('Nonplain array');
+            const n=props.length.value;
+            if(!isSafeInteger(n)||n<0||n>10000||names.length!==n+1)throw Error('Sparse or extended array');
+            out='[';
+            for(let i=0;i<n;i++){
+              const key=i+'';
+              if(!hasOwn(props,key)||!hasOwn(props[key],'value'))throw Error('Array accessor');
+              out+=(i?',':'')+visit(props[key].value,depth+1);
+            }
+            out+=']';
+          }else{
+            if(proto(value)!==objectProto&&proto(value)!==null)throw Error('Nonplain JSON object');
+            out='{';
+            for(let i=0;i<names.length;i++){
+              const key=names[i];
+              if(typeof key!=='string'||!hasOwn(props[key],'value')||!props[key].enumerable)throw Error('Object accessor or hidden value');
+              out+=(i?',':'')+stringify(key)+':'+visit(props[key].value,depth+1);
+            }
+            out+='}';
+          }
+          delete ancestors[depth];
+          if(out.length>1000000)throw Error('JSON byte bound');
+          return out;
+        }
+        return visit(root,0);
+      }
+      define(globalThis,'__hostExport',{value:fn=>{if(typeof fn!=='function')throw Error('solve required');solveFunction=fn;}});
+      define(globalThis,'__hostInvoke',{value:encoded=>{
+        const args=parse(encoded),before=encode(args);
+        const result=apply(solveFunction,undefined,args),output=encode(result);
+        if(encode(args)!==before)throw Error('Input mutation');
+        return output;
+      }});
+    })();"""
     return ('const assert=require("node:assert/strict"),vm=require("node:vm");'
             'const ctx=vm.createContext({},{codeGeneration:{strings:false,wasm:false}});'
-            'vm.runInContext(' + json.dumps(code + ';globalThis.answer=solve') + ',ctx,{timeout:500});'
+            'vm.runInContext(' + json.dumps(prelude) + ',ctx,{timeout:500});'
+            'vm.runInContext(' + json.dumps(code + ';__hostExport(solve)') + ',ctx,{timeout:500});'
             'const cases=JSON.parse(' + json.dumps(json.dumps(cases)) + ');'
             'for(const [args,expected] of cases){'
-            'vm.runInContext("globalThis.args=JSON.parse("+JSON.stringify(JSON.stringify(args))+")",ctx,{timeout:500});'
-            'const before=vm.runInContext("JSON.stringify(args)",ctx,{timeout:500});'
-            'const actual=vm.runInContext("answer(...args)",ctx,{timeout:500});'
-            'assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)),expected);'
-            'assert.equal(vm.runInContext("JSON.stringify(args)",ctx,{timeout:500}),before);}'
+            'const encoded=vm.runInContext("__hostInvoke("+JSON.stringify(JSON.stringify(args))+")",ctx,{timeout:500});'
+            'assert.deepStrictEqual(JSON.parse(encoded),expected);}'
             'console.log("PASS")')
-
 
 def run_oracle(code, task):
     cmd = ['bwrap', '--unshare-all', '--die-with-parent', '--ro-bind', '/usr', '/usr',
@@ -108,8 +158,8 @@ def main():
     train, audit = corpus['training'], corpus['audit']
     root = pathlib.Path(args.root)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    plan = {'version': 2, 'training': train, 'audit': audit, 'strategies': STRATEGIES,
-            'seed': 4472, 'costLimit': args.budget, 'primaryEndpoint':PRIMARY_ENDPOINT, 'runtime': 'Core ECMAScript in a Node vm context; no Buffer, TextEncoder, URLSearchParams, require, filesystem or network in solve. No mutation of input arguments.',
+    plan = {'version': 3, 'training': train, 'audit': audit, 'strategies': STRATEGIES,
+            'seed': 4472, 'costLimit': args.budget, 'primaryEndpoint':PRIMARY_ENDPOINT, 'runtime': 'Core ECMAScript in a Node vm context; no Buffer, TextEncoder, URLSearchParams, require, filesystem or network in solve. Return plain JSON data only: standard arrays and plain or null-prototype objects, no getters, hidden properties, sparse arrays, toJSON methods or nonfinite values. No mutation of input arguments.',
             'runnerHash': hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
             'independentFamilies': 'unestablished: curated programming microtasks, not a representative agent workload corpus'}
     # Exclusive creation prevents silent overwrite/reuse of an existing holdout.
@@ -177,7 +227,7 @@ def main():
         # Exception type is diagnostic without reflecting credentials/provider text.
         error = type(exc).__name__
     finally:
-        result = {'version': 2, 'planHash': digest(plan), 'selected': selected,
+        result = {'version': 3, 'planHash': digest(plan), 'selected': selected,
                   'trainingCalls': sum(r['split'] == 'train' for r in rows), 'auditCalls': sum(r['split'] == 'audit' for r in rows),
                   'plannedAuditCalls': len(audit) * 3, 'knownReportedCostUSD': spent, 'meteringUncertain': any(r['costUSD'] is None for r in rows),
                   'summary': summarize(rows, audit), 'terminalError': error,

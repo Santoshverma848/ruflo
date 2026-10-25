@@ -43,6 +43,15 @@ class PilotHardening(unittest.TestCase):
         self.assertEqual(self.run_js(code,[],{'__proto__':1}),0)
         self.assertNotEqual(self.run_js('function solve(){return {}}',[],{'__proto__':1}),0)
 
+    def test_nonfinite_tojson_and_accessors_are_rejected(self):
+        for code in ['function solve(){return NaN}', 'function solve(){return Infinity}', 'function solve(){return {toJSON(){return null}}}', 'function solve(){return {get x(){while(true){}}}}']:
+            with self.subTest(code=code):self.assertNotEqual(self.run_js(code,[],None),0)
+        self.assertNotEqual(self.run_js('function solve(){return {x:undefined}}',[],{}),0)
+
+    def test_pristine_intrinsics_preserve_output_and_mutation_checks(self):
+        self.assertNotEqual(self.run_js('JSON.stringify=()=>"[]";function solve(a){a.push(9);return 1}',[[]],1),0)
+        self.assertEqual(self.run_js('JSON.stringify=()=>"wrong";Object.prototype.toJSON=()=>null;function solve(){return {a:1}}',[],{'a':1}),0)
+
     def test_dynamic_codegen_and_loops_are_rejected(self):
         self.assertNotEqual(self.run_js('function solve(){return eval("1")}', [], 1), 0)
         self.assertNotEqual(self.run_js('function solve(){while(true){}}', [], None), 0)
