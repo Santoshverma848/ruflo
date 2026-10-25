@@ -18,6 +18,7 @@
  *   managed_agent_terminate→ DELETE /v1/sessions/{id} (+ optionally the env)          ↔ wasm_agent_terminate
  */
 import { createHash } from 'node:crypto';
+import { managedLearningTool } from './managed-learning-tool.js';
 import { ManagedRunCollector } from '../services/managed-run-collector.js';
 import { collectWithLease, executeManagedControl, publishManagedSnapshot, publishManagedTermination } from '../services/managed-run-store.js';
 import { getProjectCwd, type MCPTool } from './types.js';
@@ -201,30 +202,9 @@ export const managedAgentTools: MCPTool[] = [
     }),
   },
   {
-    name: 'managed_agent_learning',
-    description: 'Record structured workflow outcomes, inspect learning, recommend bounded strategies, or evaluate paired heldout evidence. Use when native provider completion cannot establish correctness or teach routing safely. Unsigned observations are quarantined; verified evidence needs the host configured Ed25519 verifier. Recommendations and MetaHarness eligibility are advisory and never change defaults. Pair with managed_agent_events for provider inspection and memory_* for independently verified evidence.',
-    category: 'agent',
-    inputSchema: { type: 'object', properties: {
-      action: { type: 'string', enum: ['status', 'record', 'recommend', 'evaluate', 'index', 'recall'] },
-      evidence: { type: 'object', description: 'Closed version1 observation and optional host signature; caller trust labels are rejected' },
-      scope: { type: 'object', description: 'Exact taskType, policyHash and evaluatorHash cohort' },
-      manifest: { type: 'object', description: 'Frozen unique heldout taskHashes and at least three trials' },
-      baselineId: { type: 'string' }, candidateId: { type: 'string' }, id: { type: 'string' }, maxP95Ms: { type: 'number' },
-    }, required: ['action'] },
-    handler: async input => {
-      if (input.action !== 'status' && process.env.RUFLO_MANAGED_LEARNING !== '1') return { success: false, error: 'Managed learning writes require host RUFLO_MANAGED_LEARNING=1' };
-      try {
-        const learning = await import('../services/managed-learning-store.js');
-        const root = getProjectCwd(), key = process.env.RUFLO_MANAGED_VERIFIER_PUBLIC_KEY;
-        if (input.action === 'status') return { success: true, ...learning.learningStatus(root, key) };
-        if (input.action === 'record') return { success: true, ...learning.recordLearning(root, input.evidence, key) };
-        if (input.action === 'recommend') return { success: true, ...learning.recommendLearning(root, input.scope, key, input.maxP95Ms as number | undefined) };
-        if (input.action === 'evaluate') return { success: true, ...learning.evaluateLearning(root, { scope: input.scope, manifest: input.manifest, baselineId: String(input.baselineId ?? ''), candidateId: String(input.candidateId ?? '') }, key) };
-        if (input.action === 'recall') return { success: true, ...await learning.recallLearning(root, input.scope, key) };
-        if (input.action === 'index') return { success: true, ...await learning.indexLearning(root, String(input.id ?? ''), key) };
-        return { success: false, error: 'Unknown managed learning action' };
-      } catch { return { success: false, error: 'Managed learning failed: validate metadata, verifier and store; state may persist, inspect status before retrying; no default changed' }; }
-    },
+  name: 'managed_agent_learning',
+  description: 'Record structured workflow outcomes, inspect learning, recommend strategies, evaluate paired holdouts, or execute one bounded feedback cycle. Use when provider completion cannot establish correctness or teach routing safely. Verified evidence needs the host Ed25519 verifier. Native memory runs in isolated workers. MetaHarness eligibility is advisory and never changes defaults. Pair with managed_agent_events and managed_agent_control for provider observations and policy checked controls; use wasm_agent_* for local execution.',
+    category: 'agent', inputSchema: managedLearningTool.inputSchema, handler: managedLearningTool.handler,
   },
   {
     name: 'managed_agent_control',
@@ -293,8 +273,8 @@ export const managedAgentTools: MCPTool[] = [
       if (Array.isArray(input.mcpServers) && input.mcpServers.length) agentBody.mcp_servers = input.mcpServers;
       if (Array.isArray(input.skills) && input.skills.length) agentBody.skills = input.skills;
       const a = await maRequest<MaAgent>('POST', '/agents', agentBody);
-      if (!a.ok) return { success: false, stage: 'agent', error: a.error };
-      if (!a.data || typeof a.data.id !== 'string' || !/^agent_[A-Za-z0-9]+$/.test(a.data.id)) return { success: false, stage: 'agent', error: 'Invalid agent acknowledgement; inspect provider resources before retrying' };
+      if (!a.ok) return { success: false, stage: 'agent', error: a.error, cleanupRequired: !definiteRejection(a.status) };
+      if (!a.data || typeof a.data.id !== 'string' || !/^agent_[A-Za-z0-9]+$/.test(a.data.id)) return { success: false, stage: 'agent', error: 'Invalid agent acknowledgement; inspect provider resources before retrying', cleanupRequired: true };
 
       // 2. Environment
       const envBody: Record<string, unknown> = {

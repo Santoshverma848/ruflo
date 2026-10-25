@@ -1,6 +1,7 @@
 # Changelog: ruflo-console
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
+- feat: exact managed session controls in the model palette with existing confirmation and permission gates
 
 ## 0.49.0 — 2026-10-24
 - feat: first class managed sessions in Workflows with reported budgets, remote blockers and host checked controls

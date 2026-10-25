@@ -150,6 +150,14 @@ describe('pagination and observation', () => {
 });
 
 describe('transport and cleanup security', () => {
+  it('marks ambiguous initial agent creation for inspection without blind cleanup', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network outcome unknown'));
+    expect(await call('managed_agent_create')).toMatchObject({ success: false, stage: 'agent', cleanupRequired: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValueOnce(json({ id: 'unexpected' }));
+    expect(await call('managed_agent_create')).toMatchObject({ success: false, stage: 'agent', cleanupRequired: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
   it('does not reuse a generic model proxy or follow redirects', async () => {
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://wrong.example');
     fetchMock.mockImplementation(() => json({ id: 'sesn_a' }));

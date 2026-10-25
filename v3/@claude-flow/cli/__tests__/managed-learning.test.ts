@@ -4,10 +4,10 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonical, digest, evaluate, evidenceOf, isVerified, manifestOf, observationOf, recommend, trustedEvidence, type Evidence, type Observation } from '../src/services/managed-learning.js';
-import { evaluateLearning, indexLearning, learningStatus, recordLearning, recommendLearning, recallLearning } from '../src/services/managed-learning-store.js';
+import { evaluateLearning, indexLearning, learningStatus, recordLearning, recordLearningBatch, recommendLearning, recallLearning } from '../src/services/managed-learning-store.js';
 
-const memory = vi.hoisted(() => ({ store: vi.fn(), search: vi.fn(), get: vi.fn() }));
-vi.mock('../src/memory/memory-initializer.js', () => ({ storeEntry: memory.store, searchEntries: memory.search, getEntry: memory.get }));
+const memory = vi.hoisted(() => ({ index: vi.fn(), recall: vi.fn() }));
+vi.mock('../src/services/managed-memory-client.js', () => ({ nativeMemoryIndex: memory.index, nativeMemoryRecall: memory.recall }));
 const pair = generateKeyPairSync('ed25519');
 const publicKey = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 const scope = { taskType: 'code-review' as const, policyHash: digest('policy'), evaluatorHash: digest('evaluator') };
@@ -26,7 +26,7 @@ function heldout(): Evidence[] {
 }
 const roots: string[] = [];
 const root = () => { const r = mkdtempSync(join(tmpdir(), 'managed-learning-')); roots.push(r); return r; };
-afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); memory.store.mockReset(); memory.search.mockReset(); memory.get.mockReset(); });
+afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); memory.index.mockReset(); memory.recall.mockReset(); });
 
 describe('host verification boundary', () => {
   it('requires the host key and verifies all bound observation fields', () => {
@@ -159,26 +159,36 @@ describe('durable quarantine, attestation and RuVector bridge', () => {
   it('semantic recall revalidates every memory hit and excludes unsigned or heldout rows', async () => {
     const r = root(), rows = training(); for (const e of rows) recordLearning(r, e, publicKey);
     const valid = rows[0]!, forged = { observation: rows[1]!.observation };
-    memory.search.mockResolvedValue({ success: true, results: [
+    memory.recall.mockResolvedValue({ available: true, rows: [
       { key: digest(valid.observation), content: JSON.stringify(valid), score: .9, namespace: 'managed-workflow-evidence' },
       { key: digest(forged.observation), content: JSON.stringify(forged), score: 1, namespace: 'managed-workflow-evidence' },
     ] });
-    memory.get.mockImplementation(async ({ key }) => ({ success: true, found: true, entry: { key, namespace: 'managed-workflow-evidence', content: JSON.stringify(key === digest(valid.observation) ? valid : forged) } }));
     const result = await recallLearning(r, scope, publicKey);
     expect(result).toMatchObject({ available: true, advisory: true, similarityIsVerification: false });
     expect(result.evidence).toHaveLength(1);
     expect(result.recommendation.selected?.strategy.id).toBe('candidate');
-    expect(memory.search).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'managed-workflow-evidence' }));
+    expect(memory.recall).toHaveBeenCalledWith(r, expect.objectContaining({ taskType: scope.taskType, allowedIds: expect.arrayContaining([digest(valid.observation)]) }), expect.any(Function));
   });
-  it('hydrates truncated native search previews and rejects wrong scoped rows', async () => {
+  it('requires complete scoped hydrated child rows before receipt authentication', async () => {
     const r = root(), e = training()[0]!, key = digest(e.observation);
     recordLearning(r, e, publicKey);
-    memory.search.mockResolvedValue({ success: true, results: [{ key, content: JSON.stringify(e).slice(0, 60) + '...', score: .5, namespace: 'managed-workflow-evidence' }] });
-    memory.get.mockResolvedValue({ success: true, found: true, entry: { key, namespace: 'managed-workflow-evidence', content: JSON.stringify(e) } });
+    memory.recall.mockResolvedValue({ available: true, rows: [{ key, content: JSON.stringify(e), score: .5, namespace: 'managed-workflow-evidence' }] });
     expect((await recallLearning(r, scope, publicKey)).evidence).toHaveLength(1);
-    expect(memory.get).toHaveBeenCalledWith({ key, namespace: 'managed-workflow-evidence', dbPath: join(r, '.swarm/memory.db') });
-    memory.get.mockResolvedValue({ success: true, found: true, entry: { key, namespace: 'other', content: JSON.stringify(e) } });
+    memory.recall.mockResolvedValue({ available: true, rows: [{ key, content: JSON.stringify(e).slice(0, 60) + '...', score: .5, namespace: 'managed-workflow-evidence' }] });
     expect((await recallLearning(r, scope, publicKey)).evidence).toHaveLength(0);
+    memory.recall.mockRejectedValue(Error('native child terminated'));
+    expect(await recallLearning(r, scope, publicKey)).toMatchObject({ available: false, evidence: [], advisory: true });
+  });
+  it('does not disguise revoked recall authorization as an advisory backend failure', async () => {
+    const r = root(); recordLearning(r, training()[0]!, publicKey);
+    await expect(recallLearning(r, scope, publicKey, () => false)).rejects.toThrow('policy denied');
+    expect(memory.recall).not.toHaveBeenCalled();
+    let authorized = true;
+    memory.recall.mockImplementation(async () => { authorized = false; throw Error('native child stopped'); });
+    await expect(recallLearning(r, scope, publicKey, () => authorized)).rejects.toThrow('policy denied');
+    authorized = true;
+    memory.recall.mockImplementation(async () => { authorized = false; return { available: true, rows: [] }; });
+    await expect(recallLearning(r, scope, publicKey, () => authorized)).rejects.toThrow('policy denied');
   });
   it('refuses symlink state locations and concurrent writer locks', () => {
     const r = root(), other = root(); symlinkSync(other, join(r, '.claude-flow'));
@@ -189,10 +199,10 @@ describe('durable quarantine, attestation and RuVector bridge', () => {
   });
   it('indexes only verified training evidence through native append-only storage', async () => {
     const r = root(), e = signed(observation()); recordLearning(r, e, publicKey);
-    memory.store.mockResolvedValue({ success: true, embedding: { dimensions: 384 } });
+    memory.index.mockResolvedValue({ durable: true, hasEmbedding: true });
     expect(await indexLearning(r, digest(e.observation), publicKey)).toMatchObject({ indexed: true, hasEmbedding: true });
-    expect(memory.store).toHaveBeenCalledWith(expect.objectContaining({ requireNative: true, appendOnly: true, upsert: false, namespace: 'managed-workflow-evidence' }));
-    memory.store.mockResolvedValue({ success: true, persistWarning: 'uncertain' });
+    expect(memory.index).toHaveBeenCalledWith(r, expect.objectContaining({ id: digest(e.observation), value: JSON.stringify(e), taskType: scope.taskType }), expect.any(Function));
+    memory.index.mockResolvedValue({ durable: false, hasEmbedding: false });
     await expect(indexLearning(r, digest(e.observation), publicKey)).rejects.toThrow('durable');
   });
   it('never writes a vector entry for holdout or unsigned evidence', async () => {
@@ -200,6 +210,25 @@ describe('durable quarantine, attestation and RuVector bridge', () => {
       const r = root(); recordLearning(r, e, publicKey);
       await expect(indexLearning(r, digest(e.observation), publicKey)).rejects.toThrow('Verified training');
     }
-    expect(memory.store).not.toHaveBeenCalled();
+    expect(memory.index).not.toHaveBeenCalled();
   });
+  it('records a bounded batch atomically and preserves replay idempotency', () => {
+    const r = root(), rows = training();
+    const results = recordLearningBatch(r, rows, publicKey);
+    expect(results).toHaveLength(6); expect(results.every(row => row.stored)).toBe(true);
+    expect(learningStatus(r, publicKey).verified).toBe(6);
+    expect(recordLearningBatch(r, rows, publicKey).every(row => row.duplicate)).toBe(true);
+    const before = readFileSync(join(r, '.claude-flow/managed-learning/state.json'), 'utf8');
+    const conflict = signed(observation({ ...rows[0]!.observation, costCents: 1 }));
+    expect(() => recordLearningBatch(r, [signed(observation({ attemptId: digest('new') })), conflict], publicKey)).toThrow('Conflicting');
+    expect(readFileSync(join(r, '.claude-flow/managed-learning/state.json'), 'utf8')).toBe(before);
+  });
+  it('validates all batch inputs before writing and limits batch size', () => {
+    const r = root(), row = signed(observation());
+    expect(() => recordLearningBatch(r, [row, { observation: { ...row.observation, verified: true } }], publicKey)).toThrow();
+    expect(learningStatus(r, publicKey).observations).toBe(0);
+    expect(() => recordLearningBatch(r, [], publicKey)).toThrow('1 to 24');
+    expect(() => recordLearningBatch(r, Array(25).fill(row), publicKey)).toThrow('1 to 24');
+  });
+
 });

@@ -202,3 +202,89 @@ before removing the adapter. No existing default model, native workflow schema,
 router state or memory row is migrated or overwritten by this integration.
 
 Validation receipt: [managed learning and console](../../../../docs/validation/managed-learning-console.md).
+
+## Amendment: executable verification and bounded feedback cycles
+
+The next delivery closes four gaps exposed by native integration: managed
+buttons were not callable through the model palette; signed observations had
+no executable independent host verifier; native memory could abort the MCP
+process; and individual learning operations required manual sequencing.
+
+### Specification and invariants
+
+1. Exact session-bound palette entries reuse the confirmed action runner and
+   its existing permission classes. Text and selection changes cannot retarget
+   an admitted action. The remote handler still rechecks provider and host policy.
+2. A host-owned verifier manifest names explicit tests and source/artifact files.
+   The verifier executes bounded argv checks without a shell, verifies measured
+   cost bindings, rehashes files and signs the complete outcome. Failed tests
+   remain failed observations, not discarded evidence. Neither MCP input nor a
+   provider transcript supplies commands, signing keys or acceptance verdicts.
+3. Native memory initialization and operations run in a fixed worker process.
+   A timeout, native abort, malformed response or missing backend cannot become
+   successful indexing and cannot take down the parent through a native abort.
+   Process isolation is not an OS memory sandbox and does not prevent host OOM.
+4. One cycle admits at most 24 measured signed outcomes in an exact cohort,
+   persists one atomic batch, optionally indexes at most six training outcomes,
+   recalls authenticated evidence, recommends and optionally evaluates paired
+   holdouts. Every asynchronous phase rechecks the current host authorization.
+5. A cycle never runs model tasks, starts a background timer, promotes policy,
+   changes routing defaults or broadens an execution envelope. A scheduler or
+   workflow invokes it explicitly after independent verification.
+
+### Control flow and restart behavior
+
+```text
+verify host manifest and measurements
+→ admit every signed outcome before mutation
+→ persist atomic batch
+→ optional bounded native index and authenticated recall
+→ recommend from all eligible training evidence
+→ optional complete paired holdout evaluation
+→ return advisory result and phase evidence
+```
+
+The existing managed_agent_learning operation gains action=cycle with one
+closed cycle object. The host flag and configured verifier key are checked
+again across phase boundaries; a caller approval or promotion flag is rejected.
+Per-attempt immutability makes replay safe. A failure after batch persistence
+leaves durable evidence that can be retried, not a false claim that later phases
+completed. Native insertion replay must verify the existing exact scoped row
+instead of overwriting it or trusting a local index-complete marker.
+
+The host verifier is trusted executable code, not a sandbox for arbitrary test
+programs. Its private key is loaded outside child test environments. Host-owned
+commands still require ordinary repository review and OS controls. Synthetic
+fixture prices exercise the gate but cannot demonstrate economic improvement.
+
+### Alternatives and operational tradeoffs
+
+| Choice | Decision and rationale |
+| --- | --- |
+| Native imports in MCP process | Rejected: a native abort bypasses JavaScript error handling |
+| Unbounded process per receipt | Rejected: repeated model/backend initialization and concurrency pressure |
+| Bounded native worker lifecycle | Selected: isolates aborts and permits bounded warm reuse; native RSS still needs host limits |
+| One fsync transaction per outcome | Retained for legacy record; cycles use one batch transaction to reduce durable-write overhead |
+| Automatic promotion after the cost gate | Rejected: measured eligibility does not grant deployment authority |
+| Model-submitted test command | Rejected: acceptance commands belong to the trusted host manifest |
+
+### Acceptance and release gates
+
+Run executable verifier success, failure, timeout, source mutation and cost
+binding cases. Replay an authenticated cycle and confirm zero duplicate rows.
+Revoke authorization between phases and confirm no later effects. Crash and
+hang the native worker and confirm the parent remains available. Exercise
+console_run with exact session IDs, confirmation and permission downgrades.
+Measure atomic batching against the same sequential durable record baseline.
+
+The live provider canary is separately opt-in, requires an executor API key and
+one or two existing predefined agent IDs, uses the official origin and a fixed
+small task with a $1 provider budget. In-flight requests may overshoot. Unknown
+creation outcomes require inspection rather than blind retry or cascading
+cleanup. Missing credentials produce a blocked result with zero provider calls.
+Passing fixture E2E is not a live budget-pause or production-quality claim.
+
+Linux ruOS, local CPU fixtures and CI have separate receipts. Windows/macOS
+durability, production verifier operation and a live provider canary remain
+explicit release gates until actual results exist. Disable learning/control
+flags to stop effects; no automatic policy or memory migration is introduced.

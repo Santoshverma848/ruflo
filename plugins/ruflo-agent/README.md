@@ -235,3 +235,20 @@ the existing MetaHarness conjunction. It never changes routing defaults.
 Native append-only memory indexing and semantic recall are optional; absent
 embeddings or backends are reported instead of being called a successful vector
 integration. See [ADR 0004](docs/adrs/0004-verified-learning-and-console.md).
+
+### Executable outcome verification and feedback cycles
+
+The host runs `scripts/managed-outcome-verifier.mts` with a reviewed, owned
+manifest and private signing key held outside test environments. Separate
+acceptance, safety, replay and adversarial checks measure actual exits; source,
+artifact and cost bindings are checked before signing. This trusted host utility
+is not an arbitrary command tool for agents.
+
+`managed_agent_learning` action `cycle` admits up to 24 signed measured outcomes,
+records one atomic batch, optionally indexes six training outcomes, recalls,
+recommends and evaluates a complete paired holdout. Its result is advisory; it
+never starts model work or promotes defaults. `scripts/e2e-managed-loop.mts`
+exercises the verifier and feedback path. `scripts/e2e-managed-provider.mts` is a
+separate opt-in live canary and exits blocked without provider credentials and
+predefined worker IDs. The native memory worker isolates crashes and timeouts;
+it does not provide an operating-system memory sandbox. See ADR 0004.

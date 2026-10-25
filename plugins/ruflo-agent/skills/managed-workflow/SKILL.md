@@ -63,3 +63,12 @@ Use `index`/`recall` only for authenticated training evidence; preserve reported
 backend/embedding failures. Use `evaluate` on a frozen, disjoint heldout manifest
 with three or more trials before treating a strategy as eligible. Eligibility
 never grants promotion, deployment or configuration writes.
+
+After the host verifier has tested and signed outcomes, use managed_agent_learning
+action=cycle with a closed cycle object: scope, at most 24 evidence records,
+optional index, maxP95Ms and evaluation (manifest, baselineId, candidateId).
+One atomic batch precedes bounded native indexing and advisory evaluation.
+Replays preserve attempt identity. Never place commands, keys, approval or
+promotion flags in a cycle. A failed later phase can leave the signed batch
+persisted; inspect status and retry the same evidence rather than inventing
+new attempts. This is an explicit feedback step, not automatic task execution.

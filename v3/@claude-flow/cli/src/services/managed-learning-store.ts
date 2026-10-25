@@ -2,6 +2,7 @@
 import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { nativeMemoryIndex, nativeMemoryRecall } from './managed-memory-client.js';
 import { digest, evidenceOf, evaluate, isVerified, manifestOf, recommend, scopeOf, trustedEvidence, type Evidence } from './managed-learning.js';
 
 export const LEARNING_PATH = '.claude-flow/managed-learning/state.json';
@@ -87,23 +88,30 @@ function summaryOf(state: State, publicKey?: string) {
 }
 export function learningStatus(root: string, publicKey?: string) { return summaryOf(read(directory(root)), publicKey); }
 
+function applyRecord(state: State, evidence: Evidence, publicKey?: string) {
+  const verified = isVerified(evidence, publicKey);
+  const previous = state.records.find(e => e.observation.attemptId === evidence.observation.attemptId && isVerified(e, publicKey));
+  if (previous && verified && digest(previous.observation) !== digest(evidence.observation)) throw new Error('Conflicting learning attempt; immutable verified observations cannot be overwritten');
+  const duplicate = state.records.find(e => digest(e) === digest(evidence));
+  if (duplicate) return { stored: false, duplicate: true, id: digest(evidence.observation), verified };
+  const unsigned = state.records.find(e => !e.signature && digest(e.observation) === digest(evidence.observation));
+  if (unsigned && verified) { unsigned.signature = evidence.signature; return { stored: true, duplicate: false, id: digest(evidence.observation), verified: true }; }
+  if (!verified && state.records.filter(e => !isVerified(e, publicKey)).length >= 100) throw new Error('Learning quarantine is full');
+  if (state.records.length >= 500) throw new Error('Learning ledger is full');
+  state.records.push(evidence);
+  return { stored: true, duplicate: false, id: digest(evidence.observation), verified };
+}
+
+/** Validate all input before acquiring the writer lock; publish the batch atomically. */
+export function recordLearningBatch(root: string, inputs: unknown[], publicKey?: string) {
+  if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > 24) throw new Error('Learning batch must contain 1 to 24 records');
+  const evidence = inputs.map(evidenceOf);
+  if (evidence.some(e => e.signature && !isVerified(e, publicKey))) throw new Error('Untrusted or mismatched verifier receipt');
+  return mutate(root, state => evidence.map(e => applyRecord(state, e, publicKey)), publicKey);
+}
+
 export function recordLearning(root: string, input: unknown, publicKey?: string) {
-  const evidence = evidenceOf(input);
-  if (evidence.signature && !isVerified(evidence, publicKey)) throw new Error('Untrusted or mismatched verifier receipt');
-  return mutate(root, state => {
-    const verified = isVerified(evidence, publicKey);
-    const previous = state.records.find(e => e.observation.attemptId === evidence.observation.attemptId && isVerified(e, publicKey));
-    if (previous && verified && digest(previous.observation) !== digest(evidence.observation)) throw new Error('Conflicting learning attempt; immutable verified observations cannot be overwritten');
-    const duplicate = state.records.find(e => digest(e) === digest(evidence));
-    if (duplicate) return { stored: false, duplicate: true, id: digest(evidence.observation), verified };
-    const unsigned = state.records.find(e => !e.signature && digest(e.observation) === digest(evidence.observation));
-    if (unsigned && verified) { unsigned.signature = evidence.signature; return { stored: true, duplicate: false, id: digest(evidence.observation), verified: true }; }
-    // Quarantine cannot reserve trusted attempt IDs or exhaust all verified capacity.
-    if (!verified && state.records.filter(e => !isVerified(e, publicKey)).length >= 100) throw new Error('Learning quarantine is full');
-    if (state.records.length >= 500) throw new Error('Learning ledger is full');
-    state.records.push(evidence);
-    return { stored: true, duplicate: false, id: digest(evidence.observation), verified: isVerified(evidence, publicKey) };
-  }, publicKey);
+  return recordLearningBatch(root, [input], publicKey)[0]!;
 }
 
 export function recommendLearning(root: string, scope: unknown, publicKey?: string, maxP95Ms?: number) {
@@ -128,44 +136,46 @@ export function evaluateLearning(root: string, input: { scope: unknown; manifest
 }
 
 /** Export only verified training evidence to native append-only AgentDB/RuVector storage. */
-export async function indexLearning(root: string, id: string, publicKey?: string) {
+export async function indexLearning(root: string, id: string, publicKey?: string, authorize: () => boolean = () => true) {
   if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid evidence ID');
   const evidence = trustedEvidence(read(directory(root)).records, publicKey).find(e => digest(e.observation) === id && e.observation.split === 'train');
   if (!evidence) throw new Error('Verified training evidence required for indexing');
-  const memoryModule = '../memory/memory-initializer.js';
-  const { storeEntry } = await import(memoryModule) as { storeEntry: (input: Record<string, unknown>) => Promise<{ success: boolean; persistWarning?: string; embedding?: unknown }> };
-  const result = await storeEntry({ key: id, namespace: 'managed-workflow-evidence', value: JSON.stringify(evidence), tags: ['managed-workflow', evidence.observation.taskType], generateEmbeddingFlag: true, upsert: false, requireNative: true, appendOnly: true, dbPath: join(resolve(root), '.swarm', 'memory.db'), provenanceType: 'system_observation' });
-  if (!result.success || result.persistWarning) throw new Error('Native evidence index did not confirm durable persistence');
-  return { indexed: !!result.embedding, durable: true, namespace: 'managed-workflow-evidence', id, hasEmbedding: !!result.embedding, advisory: true };
+  if (!authorize()) throw new Error('Managed memory policy denied');
+  const result = await nativeMemoryIndex(root, { id, value: JSON.stringify(evidence), taskType: evidence.observation.taskType }, authorize);
+  if (!authorize()) throw new Error('Managed memory policy changed; admitted write may have completed');
+  if (!result.durable) throw new Error('Native evidence index did not confirm durable persistence');
+  return { indexed: result.hasEmbedding, durable: true, namespace: 'managed-workflow-evidence', id, hasEmbedding: result.hasEmbedding, advisory: true };
 }
 
 /** Memory similarity supplies recall evidence, never authority or a cherry-picked quality denominator. */
-export async function recallLearning(root: string, input: unknown, publicKey?: string) {
+export async function recallLearning(root: string, input: unknown, publicKey?: string, authorize: () => boolean = () => true) {
   const scope = scopeOf(input);
   const local = trustedEvidence(read(directory(root)).records, publicKey).filter(e => e.observation.split === 'train' && e.observation.taskType === scope.taskType && e.observation.policyHash === scope.policyHash && e.observation.evaluatorHash === scope.evaluatorHash);
   const allowed = new Set(local.map(e => digest(e.observation)));
-  const memoryModule = '../memory/memory-initializer.js';
-  const { searchEntries, getEntry } = await import(memoryModule) as {
-    searchEntries: (input: Record<string, unknown>) => Promise<{ success: boolean; results: Array<{ key: string; content: string; score: number; namespace: string }> }>;
-    getEntry: (input: Record<string, unknown>) => Promise<{ success: boolean; found: boolean; entry?: { key: string; namespace: string; content: string } }>;
-  };
-  const result = await searchEntries({ query: `managed workflow ${scope.taskType}`, namespace: 'managed-workflow-evidence', limit: 20, threshold: 0, dbPath: join(resolve(root), '.swarm', 'memory.db') });
-  if (!result.success) return { available: false, backend: 'ruflo-memory', evidence: [], recommendation: recommend(local, scope), advisory: true };
+  let result: Awaited<ReturnType<typeof nativeMemoryRecall>>;
+  if (!authorize()) throw new Error('Managed memory policy denied');
+  try {
+    result = await nativeMemoryRecall(root, { taskType: scope.taskType, allowedIds: [...allowed] }, authorize);
+  }
+  catch {
+    if (!authorize()) throw new Error('Managed memory policy denied');
+    return { available: false, backend: 'ruflo-memory-child', evidence: [], recommendation: recommend(local, scope), advisory: true, similarityIsVerification: false };
+  }
+  if (!authorize()) throw new Error('Managed memory policy denied');
+  if (!result.available) return { available: false, backend: 'ruflo-memory-child', evidence: [], recommendation: recommend(local, scope), advisory: true, similarityIsVerification: false };
   const seen = new Set<string>();
   const evidence: Array<{ id: string; similarity: number; strategy: Evidence['observation']['strategy']; sourceHash: string }> = [];
-  for (const hit of result.results.slice(0, 20)) {
+  for (const hit of result.rows.slice(0, 20)) {
     if (hit.namespace !== 'managed-workflow-evidence' || !allowed.has(hit.key) || seen.has(hit.key) || !Number.isFinite(hit.score)) continue;
     seen.add(hit.key);
     try {
-      // Search deliberately returns 60-character display previews. Hydrate the
-      // exact scoped row before authenticating; previews cannot carry receipts.
-      const row = await getEntry({ key: hit.key, namespace: 'managed-workflow-evidence', dbPath: join(resolve(root), '.swarm', 'memory.db') });
-      const entry = row.entry;
-      if (!row.success || !row.found || !entry || entry.key !== hit.key || entry.namespace !== 'managed-workflow-evidence' || typeof entry.content !== 'string' || entry.content.length > 8192) continue;
-      const receipt = evidenceOf(JSON.parse(entry.content));
+      // The child hydrates exact native rows, not display previews. The MCP
+      // parent still authenticates every receipt and joins the local cohort.
+      if (typeof hit.content !== 'string' || Buffer.byteLength(hit.content) > 8192) continue;
+      const receipt = evidenceOf(JSON.parse(hit.content));
       if (!isVerified(receipt, publicKey) || digest(receipt.observation) !== hit.key) continue;
       evidence.push({ id: hit.key, similarity: hit.score, strategy: receipt.observation.strategy, sourceHash: receipt.observation.sourceHash });
     } catch { /* A missing or malformed row is not verified recall evidence. */ }
   }
-  return { available: true, backend: 'ruflo-memory', evidence, recommendation: recommend(local, scope), advisory: true, similarityIsVerification: false };
+  return { available: true, backend: 'ruflo-memory-child', evidence, recommendation: recommend(local, scope), advisory: true, similarityIsVerification: false };
 }

@@ -1,6 +1,7 @@
 # Changelog: ruflo-agent
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
+- feat: verified feedback cycles, independent host verification, atomic admission and isolated native memory with replay and policy checks
 
 ## 0.4.0 — 2026-10-24
 - fix: hydrate native memory search previews before authenticating recalled managed workflow receipts; verified through ruOS process restart

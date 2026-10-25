@@ -9,6 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join, isAbsolute } from 'node:path';
 import { canonical, digest, observationOf } from '../v3/@claude-flow/cli/src/services/managed-learning.js';
 import { indexLearning, learningStatus, recallLearning, recordLearning, recommendLearning } from '../v3/@claude-flow/cli/src/services/managed-learning-store.js';
+import { managedMemoryClient } from '../v3/@claude-flow/cli/src/services/managed-memory-client.js';
 
 const [mode, inputRoot] = process.argv.slice(2);
 assert(['write', 'status', 'recall'].includes(mode));
@@ -39,10 +40,12 @@ try {
     const recommendation = recommendLearning(root, scope, publicKey);
     assert.equal(recommendation.selected?.samples, 3);
     assert.equal(learningStatus(root, publicKey).verified, 3);
-    const indexed = [];
-    for (const id of ids) indexed.push(await indexLearning(root, id, publicKey));
+    const indexed = [], indexMs = [];
+    for (const id of ids) { const started = performance.now(); indexed.push(await indexLearning(root, id, publicKey)); indexMs.push(performance.now() - started); }
     assert(indexed.every(row => row.durable));
-    output = { ...output, verifiedRows: 3, indexed, advisoryStrategy: recommendation.selected?.strategy.id };
+    // Replay the same immutable native rows instead of attempting overwrite.
+    for (const id of ids) assert.equal((await indexLearning(root, id, publicKey)).durable, true);
+    output = { ...output, verifiedRows: 3, indexed, indexMs, nativeReplayRows: ids.length, workers: managedMemoryClient.stats().workers, advisoryStrategy: recommendation.selected?.strategy.id };
   } else {
     const { publicKey, ids } = JSON.parse(readFileSync(metadata, 'utf8'));
     assert.equal(learningStatus(root, publicKey).verified, 3);
@@ -63,7 +66,7 @@ try {
   output = { ...output, passed: false, error: (error as Error).message };
   process.exitCode = 1;
 } finally {
-  try { const memory = '../v3/@claude-flow/cli/src/memory/memory-bridge.js'; await (await import(memory)).shutdownBridge(); } catch { /* unavailable backend already reported */ }
+  managedMemoryClient.close();
   writeFileSync(join(root, `native-${mode}.json`), JSON.stringify(output, null, 2));
   console.log(JSON.stringify(output));
 }

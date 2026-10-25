@@ -14,6 +14,8 @@ RUFLO_E2E_LIVE=1 bash plugins/ruflo-console/scripts/drive.sh \
 
 Output is one `CALL <tool> <input>` and one `RESULT <tool> <text>` line per console call (each result cut at 4000 characters), then `COST <usd> CALLS <n>`, then one `EXPECT ok|FAIL /regex/` line per `--expect`.
 
+For managed sessions, `console_state` with `filter: "managed"` lists exact session-bound palette ids such as `managed-inspect-sesn_abc`, `managed-interrupt-sesn_abc` and `managed-terminate-sesn_abc`. Pass a listed id to `console_run`; text arguments cannot select another session. The selected Workflows run is listed first. Inspect requires the `manage` control level; interrupt and terminate require `full` under the existing conservative action classifier. All use the console confirmation gate, and destructive actions still await the person in auto mode. At execution the managed control backend checks current provider state and host policy; displayed progress or verification claims grant no permission. `console_state` reports the current page as bounded text, so open Workflows, Cost or Learning before reading its managed facts.
+
 | Exit | Meaning |
 |------|---------|
 | 0 | a console call ran and every `--expect` matched (or the run was skipped, see below) |
