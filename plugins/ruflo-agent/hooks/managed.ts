@@ -1,7 +1,7 @@
 import type { ModOptions } from './options'
 import { splitName } from './guard'
 
-export const MANAGED_TOOLS = ['managed_agent_capabilities', 'managed_agent_create', 'managed_agent_prompt', 'managed_agent_status', 'managed_agent_events', 'managed_agent_list', 'managed_agent_interrupt', 'managed_agent_terminate'] as const
+export const MANAGED_TOOLS = ['managed_agent_capabilities', 'managed_agent_learning', 'managed_agent_control', 'managed_agent_create', 'managed_agent_prompt', 'managed_agent_status', 'managed_agent_events', 'managed_agent_list', 'managed_agent_interrupt', 'managed_agent_terminate'] as const
 
 const record = (v: unknown): Record<string, unknown> | undefined => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined
 

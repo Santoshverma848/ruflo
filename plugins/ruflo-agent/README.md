@@ -33,7 +33,7 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 - `managed-agent` — run an Anthropic Claude Managed Agent (cloud) — create / prompt / status / events / list / terminate
 - `nested-subagents` — spawn nested sub-agent trees (depth ≤ 5) via Claude Code's native `Task` tool for context-managed deep delegation
 
-## MCP surface (35 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 8 `managed_agent_*`)
+## MCP surface (37 tools: 14 `wasm_agent_*`, 13 `wasm_gallery_*`, 10 `managed_agent_*`)
 
 ### WASM runtime — `v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts` (27 in total; the main ones)
 
@@ -54,6 +54,8 @@ Design: [ADR-115](../../v3/docs/adr/ADR-115-managed-agents-rvagent-backend.md) (
 
 | Tool | Purpose | WASM counterpart |
 |------|---------|------------------|
+| `managed_agent_control` | Inspect, interrupt or terminate through fresh host allowlist and provider checks | Console confirm card |
+| `managed_agent_learning` | Quarantine outcomes, verify host receipts, recommend, compare, index and recall evidence | Learning page |
 | `managed_agent_capabilities` | Local adapter requirements and integration boundaries; no key or network needed | `/agent-mod capabilities` |
 | `managed_agent_create` | Provision Agent + Environment + Session (`POST /v1/agents`, `/v1/environments`, `/v1/sessions`). Accepts `model` / `system` / `name` / `networking` / `packages` / `initScript` / `mcpServers` / `skills`. | `wasm_agent_create` |
 | `managed_agent_prompt` | Send a user turn (`POST /v1/sessions/{id}/events`), poll until the session goes idle (default 180 s, cap 600 s) → `{finished, status, stopReason, assistantText, toolUses[], eventCount}` | `wasm_agent_prompt` |
@@ -191,3 +193,45 @@ No console plugin update is required. It shows local policy, not remote state.
 `managed_agent_capabilities` reports local credential configuration as a boolean;
 beta access, authorization and remote health remain unknown until checked through
 an authorized provider operation. Registered tools alone prove none of these.
+
+### Managed run console and verified learning
+
+The console Workflows page now includes managed phases and worker pages beside
+native and swarm runs. Cost and Approvals show reported spend and pending
+requests. Learning shows signed outcome counts, evidence IDs, advisory strategy
+picks and heldout gate results. These are local reports, never action authority.
+The CLI and plugins must be built from this PR until the integration is released;
+registry discovery will identify missing tools in an older installation.
+
+Only explicit prompt/inspection requests collect provider state. Panels read
+cached local projections, with no provider traffic while inactive. One collector
+shares reads per session; an OS lease blocks concurrent collectors in another
+process. A crashed lease must be inspected before manual recovery. Sessions have
+separate freshness timestamps and partial worker pages retain aggregate counts.
+
+Host controls:
+
+```text
+RUFLO_MANAGED_CONTROL=1
+RUFLO_MANAGED_CONTROL_SESSIONS=sesn_example
+RUFLO_MANAGED_LEARNING=1
+RUFLO_MANAGED_VERIFIER_PUBLIC_KEY=<trusted Ed25519 public PEM from host configuration>
+```
+
+These settings are off or absent by default. A console confirmation cannot
+supply them. Control dispatch rechecks both host policy and fresh provider state.
+Learning accepts only closed metadata; raw transcripts, arbitrary commands and
+caller trust labels are rejected. Unsigned observations remain quarantined.
+The independent host verifier signs source/artifact/policy/corpus/evaluator
+identities, measured cost/latency and actual test results. The private key never
+belongs in an agent prompt or MCP argument.
+
+`managed_agent_learning` actions: `status`, `record`, `recommend`, `evaluate`,
+`index`, `recall`. Recommendations use training receipts only. Heldout results
+cannot teach the recommender or enter the memory index. Evaluation requires a
+complete paired frozen corpus, at least three trials, equal admitted budgets,
+at least 10% better successes per dollar, and safety/quality/latency gates plus
+the existing MetaHarness conjunction. It never changes routing defaults.
+Native append-only memory indexing and semantic recall are optional; absent
+embeddings or backends are reported instead of being called a successful vector
+integration. See [ADR 0004](docs/adrs/0004-verified-learning-and-console.md).

@@ -154,3 +154,38 @@ The terminal color picker provides swatches and exact `#RRGGBB` entry for headin
 Imports are limited to 4096 characters and a strict version 1 data schema. Status labels and actual check results remain unchanged. Saving requires at least 3:1 foreground/background contrast; the generator aims for 4.5:1.
 
 Theme Studio uses focused Colors, Motion and AI tabs. At 100 content columns it places the editor beside a persistent globe and routing preview; narrower panes stack both panels with a compact routing strip. A single color role picker replaces the repeated swatch lists. Minimum contrast is shown before saving, and Discard draft changes restores the active palette without deleting saved themes.
+
+
+## Managed workflow execution and learning
+
+The Workflows page includes managed sessions alongside native workflows and
+Ruflo swarms. It reads bounded local observations from
+`.claude-flow/managed-workflows/snapshot.json`; it never starts a provider poll.
+A session's phases/workers, provider state, observed failures, budget and list
+cost are displayed with stale and partial markers. At most six managed sessions
+and 60 workers per session are retained in the visible model. Larger totals
+remain explicit. Unknown cost is n/a, never zero.
+
+Provider finished, worker inspection and independent acceptance are separate
+states. A local file claiming `verified: true` or acceptance success cannot
+produce a green correctness badge. Inspect every worker through the runtime and
+independently test artifacts before using learning evidence.
+
+Inspect, Interrupt and Terminate buttons use the existing confirmation runner
+with fixed argv to `managed_agent_control`. They pass only session ID and action.
+The control handler must fetch fresh provider state and recheck current host
+policy when it executes. A snapshot, even a fresh one, never grants authority.
+No blanket remote approval button is exposed. An interrupt only requests a pause;
+termination is only confirmed by the runtime's fresh result.
+
+Cost shows managed session budgets separately from local session totals.
+Approvals shows remote budget and permission blockers with an explicit Inspect
+control. Learning reads the advisory summary at
+`.claude-flow/managed-learning/summary.json`, up to 64 KB, and shows reported
+quarantine/training/heldout counts, the recommended strategy, measured efficiency,
+latency and evidence hashes. It does not revalidate signatures or promote defaults.
+The runtime must revalidate evidence for routing; console summaries are untrusted
+display evidence only.
+
+Warm snapshots reuse both the existing file cache and parsed facts. View renders
+are bounded to visible rows and make zero provider requests while inactive.

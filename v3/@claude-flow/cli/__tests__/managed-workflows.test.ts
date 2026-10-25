@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { managedAgentTools } from '../src/mcp-tools/managed-agent-tools.js';
 import { dynamicConfig, ManagedProgress, readManagedEvents, type ManagedEvent } from '../src/services/managed-workflows.js';
@@ -6,14 +9,17 @@ const event = (id: string, type: string, extra = {}): ManagedEvent => ({ id, typ
 const idle = (id: string, reason = 'end_turn') => event(id, 'session.status_idle', { stop_reason: { type: reason } });
 const call = (name: string, input: Record<string, unknown> = {}) => managedAgentTools.find(t => t.name === name)!.handler(input) as Promise<any>;
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
+let testRoot = '';
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  testRoot = mkdtempSync(join(tmpdir(), 'managed-api-'));
+  vi.stubEnv('CLAUDE_FLOW_CWD', testRoot);
   vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-do-not-log');
   vi.stubEnv('RUFLO_MANAGED_AGENTS_BASE_URL', 'https://api.anthropic.com');
   fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { rmSync(testRoot, { recursive: true, force: true }); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('dynamic workflow admission', () => {
   it('keeps legacy create unchanged and dynamic off', () => {
@@ -95,7 +101,7 @@ describe('pagination and observation', () => {
     await expect(readManagedEvents(async () => value)).rejects.toThrow('Invalid');
   });
   it('propagates event HTTP failure without echoing upstream secrets', async () => {
-    fetchMock.mockResolvedValue(json({ error: { message: 'test-key-do-not-log' } }, 403));
+    fetchMock.mockImplementation(() => json({ error: { message: 'test-key-do-not-log' } }, 403));
     const result = await call('managed_agent_events', { sessionId: 'sesn_a' });
     expect(result.success).toBe(false); expect(result.error).toContain('403'); expect(JSON.stringify(result)).not.toContain('test-key');
   });
@@ -104,13 +110,15 @@ describe('pagination and observation', () => {
     const initial = [idle('old'), event('current', 'user.message'), event('running', 'session.status_running')];
     fetchMock.mockResolvedValueOnce(json({ data: [event('current', 'user.message', { processed_at: null })] }))
       .mockResolvedValueOnce(json({ data: initial }))
-      .mockResolvedValueOnce(json({ data: [...initial, event('text', 'agent.message', { content: [{ type: 'text', text: 'new answer' }] }), idle('new')] }));
+      .mockResolvedValueOnce(json({ id: 'sesn_a', status: 'running' }))
+      .mockResolvedValueOnce(json({ data: [...initial, event('text', 'agent.message', { content: [{ type: 'text', text: 'new answer' }] }), idle('new')] }))
+      .mockResolvedValueOnce(json({ id: 'sesn_a', status: 'idle' }));
     const pending = call('managed_agent_prompt', { sessionId: 'sesn_a', message: 'run', maxWaitMs: 5000 });
     await vi.advanceTimersByTimeAsync(1500);
     const result = await pending;
     expect(result).toMatchObject({ finished: true, assistantText: 'new answer', verification: 'unverified' });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(new URL(fetchMock.mock.calls[2][0]).searchParams.has('created_at[gte]')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(new URL(fetchMock.mock.calls[3][0]).searchParams.has('created_at[gte]')).toBe(true);
   });
   it('rejects concurrent local prompts without sending twice', async () => {
     let release!: (value: Response) => void;
@@ -121,22 +129,22 @@ describe('pagination and observation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('reads worker thread events through an encoded path', async () => {
-    fetchMock.mockResolvedValue(json({ data: [event('err', 'session.error')] }));
+    fetchMock.mockImplementation(() => json({ data: [event('err', 'session.error')] }));
     const result = await call('managed_agent_events', { sessionId: 'sesn_a', threadId: 'thread_a', raw: true });
     expect(fetchMock.mock.calls[0][0]).toContain('/threads/thread_a/events?limit=100');
     expect(result.observedFailures).toBe(1);
   });
   it('accepts legitimate tool confirmation result strings', async () => {
-    fetchMock.mockResolvedValue(json({ data: [event('confirm', 'user.tool_confirmation', { result: 'allow' }), event('run', 'session.status_running'), idle('done')] }));
+    fetchMock.mockImplementation(() => json({ data: [event('confirm', 'user.tool_confirmation', { result: 'allow' }), event('run', 'session.status_running'), idle('done')] }));
     expect((await call('managed_agent_events', { sessionId: 'sesn_a' })).finished).toBe(true);
   });
   it('rejects workflow lifecycle events without a run ID', async () => {
-    fetchMock.mockResolvedValue(json({ data: [event('broken', 'workflow_run.created'), idle('done')] }));
+    fetchMock.mockImplementation(() => json({ data: [event('broken', 'workflow_run.created'), idle('done')] }));
     expect((await call('managed_agent_events', { sessionId: 'sesn_a' })).success).toBe(false);
   });
   it('does not contaminate a new prompt with old failed runs', async () => {
     const events = [event('oldErr', 'workflow_run.error', { workflow_run_id: 'old' }), event('oldEnd', 'workflow_run.status_ended', { workflow_run_id: 'old', result: { type: 'error' } }), idle('oldIdle'), event('current', 'user.message'), idle('done')];
-    fetchMock.mockResolvedValueOnce(json({ data: [event('current', 'user.message')] })).mockResolvedValueOnce(json({ data: events }));
+    fetchMock.mockResolvedValueOnce(json({ data: [event('current', 'user.message')] })).mockResolvedValueOnce(json({ data: events })).mockResolvedValueOnce(json({ id: 'sesn_a', status: 'idle' }));
     expect(await call('managed_agent_prompt', { sessionId: 'sesn_a', message: 'new task' })).toMatchObject({ success: true, finished: true, observedFailures: 0 });
   });
 });
@@ -144,7 +152,7 @@ describe('pagination and observation', () => {
 describe('transport and cleanup security', () => {
   it('does not reuse a generic model proxy or follow redirects', async () => {
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://wrong.example');
-    fetchMock.mockResolvedValue(json({ id: 'sesn_a' }));
+    fetchMock.mockImplementation(() => json({ id: 'sesn_a' }));
     await call('managed_agent_status', { sessionId: 'sesn_a' });
     expect(fetchMock.mock.calls[0][0]).toContain('https://api.anthropic.com/');
     expect(fetchMock.mock.calls[0][1].redirect).toBe('error');
@@ -168,7 +176,7 @@ describe('transport and cleanup security', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
   it('does not delete an environment if session deletion failed', async () => {
-    fetchMock.mockResolvedValue(json({}, 500));
+    fetchMock.mockImplementation(() => json({}, 500));
     expect((await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: 'env_a' })).success).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -177,7 +185,20 @@ describe('transport and cleanup security', () => {
     expect((await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: 'env_a' })).success).toBe(false);
   });
   it('never calls a queued interrupt confirmed cancellation', async () => {
-    fetchMock.mockResolvedValue(json({ data: [] }));
+    fetchMock.mockImplementation(() => json({ data: [] }));
     expect(await call('managed_agent_interrupt', { sessionId: 'sesn_a' })).toMatchObject({ interruptRequested: true, cancellationConfirmed: false });
   });
+});
+
+it('discards an observation when host credentials rotate during provider reads', async () => {
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes('/events?')) {
+      process.env.ANTHROPIC_API_KEY = 'rotated-host-key';
+      return json({ data: [idle('done')] });
+    }
+    return json({ id: 'sesn_a', status: 'idle' });
+  });
+  const result = await call('managed_agent_events', { sessionId: 'sesn_a' });
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('scope changed');
 });

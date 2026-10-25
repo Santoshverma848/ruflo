@@ -1,5 +1,7 @@
 # Managed dynamic workflows validation
 
+This records the initial adapter stage. See the [console and verified learning validation](managed-learning-console.md) for the latest expanded integration results.
+
 Date: 2026-10-24. Baseline: `973d0ab497c9138d7bee1dc3c7a4d3985e37bf9e`.
 Scope: existing Managed Agents REST adapter, incremental event reducer,
 plugin guidance, and isolated CI contract. No dependency or lockfile changes.

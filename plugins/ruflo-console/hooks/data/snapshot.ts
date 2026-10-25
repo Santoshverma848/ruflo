@@ -29,6 +29,7 @@ import { parseMissions, type MissionObservation } from './missions'
 import { readBounded, readDisk, textOf, type ProjectKey, type Read, type ReadCache, type ReaderFs } from './files'
 import { parseAgentdbMod, type AgentdbMod } from './agentdb-mod'
 import { readMods, type ModsFacts } from './mods'
+import { readManaged, type ManagedFacts, type ManagedLearning } from './managed'
 import {
   parseAgents,
   parseClaims,
@@ -92,6 +93,8 @@ export type Snapshot = {
   recall?: RecallFacts
   /** Every `.claude-flow/<short>-mod/status.json` the per-plugin mods wrote (ADR-446), bounded and shape-checked. */
   mods: ModsFacts
+  managed?: ManagedFacts | null
+  managedLearning?: ManagedLearning | null
   changed: number
   readAtMs: number
 }
@@ -113,8 +116,12 @@ export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, 
   const offered = location === undefined ? null : parseMarketplaceManifest(textOf(await readBounded(fs, cache, `${location}/.claude-plugin/marketplace.json`)))
   const reads = Object.fromEntries((Object.keys(disk.project) as ProjectKey[]).map(key => [key, statusOf(disk.project[key])])) as Snapshot['reads']
 
+  const managed = await readManaged(fs, cache, cwd)
+
   return {
     reads,
+    managed: managed.managed,
+    managedLearning: managed.learning,
     swarm,
     agents: parseAgents(text('agents')),
     tasks: parseTasks(text('tasks')),

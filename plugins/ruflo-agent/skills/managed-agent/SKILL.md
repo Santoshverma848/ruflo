@@ -2,7 +2,7 @@
 name: managed-agent
 description: Run an Anthropic Claude Managed Agent — a cloud agent harness (container + filesystem + tools), the cloud counterpart of the local wasm-agent runtime
 argument-hint: "<create|prompt|status|events|list|terminate> [options]"
-allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_capabilities mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_terminate mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__wasm_agent_create Bash
+allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_control mcp__plugin_ruflo-core_ruflo__managed_agent_learning mcp__plugin_ruflo-core_ruflo__managed_agent_capabilities mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_terminate mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__wasm_agent_create Bash
 ---
 
 # Managed Agent (Anthropic cloud runtime)
@@ -81,3 +81,20 @@ Use `/managed-workflow` for the full dynamic workflow procedure and
 `managed_agent_capabilities`, `/agent-mod capabilities` or `/wf-mod managed` to
 discover the adapter. Default mod policy disables dynamic creation and inline
 agents; enable only the settings needed for an already authorized task.
+
+## Verified learning and console use
+
+Use the console Workflows, Cost, Approvals and Learning pages to inspect managed
+runs. Snapshots are staleable local observations and never authorize actions.
+Use `managed_agent_control` for fresh policy checked inspect/interrupt/terminate;
+the host must separately allow the exact session. Never pass an approval flag.
+
+Before a repeated task, ask `managed_agent_learning` for a recommendation in the
+exact task/policy/evaluator scope. It is advisory and cannot expand budget,
+worker permissions, network access or default models. After independent host
+verification, record the closed outcome and host Ed25519 signature. Unknown or
+unsigned observations stay quarantined. Never request the verifier private key.
+Use `index`/`recall` only for authenticated training evidence; preserve reported
+backend/embedding failures. Use `evaluate` on a frozen, disjoint heldout manifest
+with three or more trials before treating a strategy as eligible. Eligibility
+never grants promotion, deployment or configuration writes.

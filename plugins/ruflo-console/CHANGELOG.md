@@ -2,6 +2,11 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.49.0 — 2026-10-24
+- feat: first class managed sessions in Workflows with reported budgets, remote blockers and host checked controls
+- feat: advisory managed learning evidence and recommendations in Learning
+- fix: provider completion never becomes a verified correctness badge; local snapshot flags are not authority
+
 ## 0.48.0 — 2026-10-24
 - feat: ruRE can read a folder outside the project that you allow (ADR-499). New option `rureFolders` (`name=/absolute/folder; name2=…`); a ruRE sample then names it as `@name/sub/file`. Changing the option is an install-class change that always waits for your Yes (Claude's console tools can only propose it at the full control level), so Claude can reach an outside folder only through a name you defined. A folder that is a link, a link anywhere below it, `..`, an absolute path typed as a sample, an unknown name, and a filesystem root are all refused; ruRE still only parses.
 - chore: the preflight of a ruRE row now receives the console's options (same line count in the runner).

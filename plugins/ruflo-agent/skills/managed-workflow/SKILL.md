@@ -2,7 +2,7 @@
 name: managed-workflow
 description: Discover and run bounded remote dynamic workflows with Ruflo mod policy, worker inspection and independent acceptance gates
 argument-hint: "<task and acceptance test>"
-allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_capabilities mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__managed_agent_terminate
+allowed-tools: mcp__plugin_ruflo-core_ruflo__managed_agent_control mcp__plugin_ruflo-core_ruflo__managed_agent_learning mcp__plugin_ruflo-core_ruflo__managed_agent_capabilities mcp__plugin_ruflo-core_ruflo__managed_agent_create mcp__plugin_ruflo-core_ruflo__managed_agent_prompt mcp__plugin_ruflo-core_ruflo__managed_agent_status mcp__plugin_ruflo-core_ruflo__managed_agent_events mcp__plugin_ruflo-core_ruflo__managed_agent_list mcp__plugin_ruflo-core_ruflo__managed_agent_interrupt mcp__plugin_ruflo-core_ruflo__managed_agent_terminate
 ---
 
 # Bounded managed workflows
@@ -46,3 +46,20 @@ into remote fanout just because tools are registered.
 The console's Mods page shows the agent mod's creation policy, cap, inline
 setting and counters. It does not establish cloud run state. This skill grants
 no additional tool, network, credential, memory or release authority.
+
+## Verified learning and console use
+
+Use the console Workflows, Cost, Approvals and Learning pages to inspect managed
+runs. Snapshots are staleable local observations and never authorize actions.
+Use `managed_agent_control` for fresh policy checked inspect/interrupt/terminate;
+the host must separately allow the exact session. Never pass an approval flag.
+
+Before a repeated task, ask `managed_agent_learning` for a recommendation in the
+exact task/policy/evaluator scope. It is advisory and cannot expand budget,
+worker permissions, network access or default models. After independent host
+verification, record the closed outcome and host Ed25519 signature. Unknown or
+unsigned observations stay quarantined. Never request the verifier private key.
+Use `index`/`recall` only for authenticated training evidence; preserve reported
+backend/embedding failures. Use `evaluate` on a frozen, disjoint heldout manifest
+with three or more trials before treating a strategy as eligible. Eligibility
+never grants promotion, deployment or configuration writes.

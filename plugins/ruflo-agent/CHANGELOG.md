@@ -3,6 +3,7 @@
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
 ## 0.4.0 — 2026-10-24
+- feat: shared managed run collection, policy checked controls and verified advisory learning with native evidence memory bridge
 - feat: managed workflow capability discovery, bounded local mod policy and console policy metadata
 - fix: ship the managed workflow integration through a versioned plugin update
 

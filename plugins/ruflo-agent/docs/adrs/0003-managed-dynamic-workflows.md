@@ -176,3 +176,12 @@ Admission is host-session-local. It does not govern externally created sessions,
 other Ruflo processes or direct provider clients. Existing provider budgets and
 host action capabilities remain independent. No new remote execution or provider
 readiness is implied by plugin installation or registry discovery.
+
+## Superseding integration detail
+
+[ADR 0004](0004-verified-learning-and-console.md) extends this decision with all
+five console/learning priorities: unified managed runs, shared collectors,
+budget/blocker panels, fresh-policy controls and host-authenticated advisory
+learning. It preserves the original unverified provider-completion boundary and
+adds no automatic default/promotion authority. The optional memory bridge stores
+verified training evidence rather than promoting a model or policy.

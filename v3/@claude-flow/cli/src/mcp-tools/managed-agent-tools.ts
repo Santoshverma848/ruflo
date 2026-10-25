@@ -17,10 +17,11 @@
  *   managed_agent_list     → GET /v1/sessions
  *   managed_agent_terminate→ DELETE /v1/sessions/{id} (+ optionally the env)          ↔ wasm_agent_terminate
  */
-
-import type { MCPTool } from './types.js';
+import { createHash } from 'node:crypto';
+import { ManagedRunCollector } from '../services/managed-run-collector.js';
+import { collectWithLease, executeManagedControl, publishManagedSnapshot, publishManagedTermination } from '../services/managed-run-store.js';
+import { getProjectCwd, type MCPTool } from './types.js';
 import { dynamicConfig, eventPage, readManagedEvents, ManagedProgress, type ManagedEvent } from '../services/managed-workflows.js';
-
 // Dedicated override avoids forwarding credentials to a generic model proxy.
 function apiBase(): string {
   const url = new URL(process.env.RUFLO_MANAGED_AGENTS_BASE_URL || 'https://api.anthropic.com');
@@ -34,7 +35,6 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const POLL_INTERVAL_MS = 1500;
 const DEFAULT_MAX_WAIT_MS = 180_000; // 3 min — long enough for a real task, bounded so a tool call never hangs forever
-
 function apiKey(): string | null {
   return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || null;
 }
@@ -70,6 +70,7 @@ async function maRequest<T = unknown>(
     });
     // Never echo upstream bodies: they may contain prompts, keys or MCP tokens.
     if (!res.ok) { await res.body?.cancel(); return { ok: false, status: res.status, error: `Managed Agents API HTTP ${res.status}` }; }
+    if (method === 'DELETE' && ![200, 204].includes(res.status)) { await res.body?.cancel(); return { ok: false, status: res.status, error: 'Provider deletion is not yet confirmed' }; }
     if (res.status === 204) return { ok: true, status: res.status, data: undefined as T };
     const reader = res.body?.getReader();
     const chunks: Uint8Array[] = [];
@@ -104,16 +105,44 @@ function summarizeEvents(events: MaEvent[]) {
   return progress.snapshot();
 }
 
-async function fetchSessionEvents(sessionId: string, since?: string, threadId?: string, deadline = Date.now() + 30_000): Promise<MaEvent[]> {
+async function fetchSessionEvents(sessionId: string, since?: string, threadId?: string, deadline = Date.now() + 30_000, expectedScope = currentCollectorScope()): Promise<MaEvent[]> {
   return readManagedEvents(async query => {
     const thread = threadId ? `/threads/${encodeURIComponent(threadId)}` : '';
     const params = new URLSearchParams(query);
     if (threadId) { params.delete('order'); params.delete('created_at[gte]'); }
+    if (currentCollectorScope() !== expectedScope) throw new Error('Managed credential scope changed during observation');
     if (Date.now() >= deadline) throw new Error('Managed Agents observation deadline reached');
     const r = await maRequest('GET', `/sessions/${encodeURIComponent(sessionId)}${thread}/events?${params}`, undefined, deadline - Date.now());
     if (!r.ok) throw new Error(r.error);
+    if (currentCollectorScope() !== expectedScope) throw new Error('Managed credential scope changed during observation');
     return r.data;
   }, since);
+}
+
+let collectorScope = '';
+let collector = new ManagedRunCollector();
+function currentCollectorScope() { return createHash('sha256').update(getProjectCwd() + apiBase() + apiKey()).digest('hex'); }
+function scopedCollector() {
+  const scope = currentCollectorScope();
+  if (scope !== collectorScope) { collector = new ManagedRunCollector(); collectorScope = scope; }
+  return collector;
+}
+async function observeSession(sessionId: string, deadline = Date.now() + 30_000) {
+  const root = getProjectCwd(), active = scopedCollector(), expectedScope = collectorScope;
+  return collectWithLease(root, sessionId, async () => {
+    const result = await active.refresh(sessionId, {
+      readEvents: since => fetchSessionEvents(sessionId, since, undefined, deadline, expectedScope),
+      readSession: async () => {
+        if (currentCollectorScope() !== expectedScope) throw new Error('Managed credential scope changed during observation');
+        const r = await maRequest<MaSession>('GET', `/sessions/${encodeURIComponent(sessionId)}`, undefined, deadline - Date.now());
+        if (!r.ok) throw new Error(r.error);
+        return r.data;
+      },
+    });
+    if (currentCollectorScope() !== expectedScope) throw new Error('Managed credential scope changed during observation');
+    publishManagedSnapshot(root, result.snapshot);
+    return result;
+  }, expectedScope);
 }
 
 // Gate new-turn observations on the provider's acknowledged message ID, not
@@ -124,7 +153,7 @@ async function waitForIdle(sessionId: string, maxWaitMs: number, messageId: stri
   const progress = new ManagedProgress();
   let started = false;
   while (Date.now() < deadline) {
-    const events = await fetchSessionEvents(sessionId, started ? progress.watermark() : undefined, undefined, deadline);
+    const { events } = await observeSession(sessionId, deadline);
     if (!started) {
       const boundary = events.findIndex(e => e.id === messageId && !!e.processed_at);
       if (boundary >= 0) {
@@ -163,12 +192,62 @@ export const managedAgentTools: MCPTool[] = [
     handler: async () => ({
       runtime: 'managed', provider: 'anthropic', networkCalled: false,
       credentialConfigured: !!apiKey(), betaAccess: 'unknown', remoteHealth: 'unknown', authorization: 'host-policy-required',
-      features: ['dynamic-workflows', 'budget-at-creation', 'limited-networking', 'predefined-agents', 'thread-inspection', 'interrupt-request', 'session-delete'],
+      features: ['dynamic-workflows', 'budget-at-creation', 'limited-networking', 'predefined-agents', 'thread-inspection', 'interrupt-request', 'session-delete', 'verified-learning'],
       create: { dynamicWorkflows: true, budgetCents: 'positive integer US cents string', networking: 'limited', predefinedAgents: 'optional agent IDs; required by default mod policy' },
       controls: { budgetOvershoot: 'in-flight requests may finish', promptTimeout: 'observation only', interrupt: 'pause requested, not cancellation', verification: 'unverified' },
       integrations: { agentMod: '/agent-mod capabilities', workflowMod: '/wf-mod managed', console: 'Mods page reads agent-mod/status.json', evidence: 'independently verify before memory_* retention or RVF export' },
+      learning: { enabled: process.env.RUFLO_MANAGED_LEARNING === '1', verifierConfigured: !!process.env.RUFLO_MANAGED_VERIFIER_PUBLIC_KEY, defaultsChanged: false },
       scope: 'Adapter facts do not grant tools, credentials, plugins or release authority. Mod admission is host-session-local, not global spend enforcement.',
     }),
+  },
+  {
+    name: 'managed_agent_learning',
+    description: 'Record structured workflow outcomes, inspect learning, recommend bounded strategies, or evaluate paired heldout evidence. Use when native provider completion cannot establish correctness or teach routing safely. Unsigned observations are quarantined; verified evidence needs the host configured Ed25519 verifier. Recommendations and MetaHarness eligibility are advisory and never change defaults. Pair with managed_agent_events for provider inspection and memory_* for independently verified evidence.',
+    category: 'agent',
+    inputSchema: { type: 'object', properties: {
+      action: { type: 'string', enum: ['status', 'record', 'recommend', 'evaluate', 'index', 'recall'] },
+      evidence: { type: 'object', description: 'Closed version1 observation and optional host signature; caller trust labels are rejected' },
+      scope: { type: 'object', description: 'Exact taskType, policyHash and evaluatorHash cohort' },
+      manifest: { type: 'object', description: 'Frozen unique heldout taskHashes and at least three trials' },
+      baselineId: { type: 'string' }, candidateId: { type: 'string' }, id: { type: 'string' }, maxP95Ms: { type: 'number' },
+    }, required: ['action'] },
+    handler: async input => {
+      if (input.action !== 'status' && process.env.RUFLO_MANAGED_LEARNING !== '1') return { success: false, error: 'Managed learning writes require host RUFLO_MANAGED_LEARNING=1' };
+      try {
+        const learning = await import('../services/managed-learning-store.js');
+        const root = getProjectCwd(), key = process.env.RUFLO_MANAGED_VERIFIER_PUBLIC_KEY;
+        if (input.action === 'status') return { success: true, ...learning.learningStatus(root, key) };
+        if (input.action === 'record') return { success: true, ...learning.recordLearning(root, input.evidence, key) };
+        if (input.action === 'recommend') return { success: true, ...learning.recommendLearning(root, input.scope, key, input.maxP95Ms as number | undefined) };
+        if (input.action === 'evaluate') return { success: true, ...learning.evaluateLearning(root, { scope: input.scope, manifest: input.manifest, baselineId: String(input.baselineId ?? ''), candidateId: String(input.candidateId ?? '') }, key) };
+        if (input.action === 'recall') return { success: true, ...await learning.recallLearning(root, input.scope, key) };
+        if (input.action === 'index') return { success: true, ...await learning.indexLearning(root, String(input.id ?? ''), key) };
+        return { success: false, error: 'Unknown managed learning action' };
+      } catch { return { success: false, error: 'Managed learning failed: validate metadata, verifier and store; state may persist, inspect status before retrying; no default changed' }; }
+    },
+  },
+  {
+    name: 'managed_agent_control',
+    description: 'Inspect, request interruption, or terminate one managed session through fresh host policy and provider-state checks. Use when native console snapshots are too stale to authorize a remote action. Requires host RUFLO_MANAGED_CONTROL=1 and an exact RUFLO_MANAGED_CONTROL_SESSIONS allowlist. No caller approval flag is accepted. Pair with managed_agent_events; use wasm_agent_terminate for local agents.',
+    category: 'agent',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'interrupt', 'terminate'] }, threadOffset: { type: 'integer', minimum: 0, maximum: 9999 } }, required: ['sessionId', 'action'] },
+    handler: async input => {
+      if (!apiKey()) return { success: false, ...NEEDS_KEY };
+      try {
+        const request = async (method: 'GET' | 'POST' | 'DELETE', id: string, body?: unknown) => {
+          const r = await maRequest<MaSession>(method, `/sessions/${encodeURIComponent(id)}${method === 'POST' ? '/events' : ''}`, body);
+          if (!r.ok) throw new Error(r.error);
+          return r.data;
+        };
+        return await executeManagedControl(input, {
+          policy: () => ({ enabled: process.env.RUFLO_MANAGED_CONTROL === '1', sessions: (process.env.RUFLO_MANAGED_CONTROL_SESSIONS ?? '').split(',').map(s => s.trim()).filter(Boolean) }),
+          read: id => request('GET', id),
+          inspect: async (id, offset) => { await observeSession(id); const page = scopedCollector().page(id, offset); if (!page) throw new Error('Snapshot unavailable'); publishManagedSnapshot(getProjectCwd(), page); return page; },
+          interrupt: id => request('POST', id, { events: [{ type: 'user.interrupt' }] }),
+          terminate: async id => { const result = await request('DELETE', id); publishManagedTermination(getProjectCwd(), id, scopedCollector()); return result; },
+        });
+      } catch { return { success: false, error: 'Managed action refused: recheck current host policy, provider state and observation lease' }; }
+    },
   },
   {
     name: 'managed_agent_create',
@@ -341,7 +420,7 @@ export const managedAgentTools: MCPTool[] = [
       const sessionId = String(input.sessionId ?? '');
       if (!sessionId) return { error: 'sessionId is required' };
       let events: MaEvent[];
-      try { events = await fetchSessionEvents(sessionId, undefined, typeof input.threadId === 'string' ? input.threadId : undefined); } catch (error) { return { success: false, sessionId, error: (error as Error).message }; }
+      try { events = typeof input.threadId === 'string' ? await fetchSessionEvents(sessionId, undefined, input.threadId) : (await observeSession(sessionId)).events; } catch (error) { return { success: false, sessionId, error: (error as Error).message }; }
       const sum = summarizeEvents(events);
       const compact = events.map(e => {
         if (e.type === 'agent.message') return { type: e.type, text: (e.content ?? []).filter(b => b?.type === 'text').map(b => b.text ?? '').join('').slice(0, 500) };
@@ -407,6 +486,7 @@ export const managedAgentTools: MCPTool[] = [
       if (!sessionId) return { success: false, error: 'sessionId is required' };
       const s = await maRequest('DELETE', `/sessions/${encodeURIComponent(sessionId)}`);
       const result: Record<string, unknown> = { runtime: 'managed', sessionId, sessionDeleted: s.ok };
+      if (s.ok) publishManagedTermination(getProjectCwd(), sessionId, scopedCollector());
       if (!s.ok) result.error = s.error;
       if (s.ok && typeof input.environmentId === 'string' && input.environmentId) {
         const e = await maRequest('DELETE', `/environments/${encodeURIComponent(String(input.environmentId))}`);
