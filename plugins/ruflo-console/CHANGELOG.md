@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.49.2 — 2026-10-25
+- fix: Windows autopilot path guards and binary-planting hardening (#4491). Matches extended namespaces (`\\?\`), device paths (`\\.\`), drive-relative paths (`C:foo`), and UNC forward-slash shares; denies envelope edits under backslashes; rejects root drive envelope paths and `.bat`/`.cmd` targets; hardens against NTFS alternate data streams and parent traversals; and resolves `powershell.exe` and `where.exe` explicitly from System32.
+
 ## 0.49.1 — 2026-10-25
 - fix: the Plugin Catalog reads the marketplace clone on Windows. The clone's location is a drive path (`C:\Users\…\marketplaces\ruflo`), and the catalog refused anything not starting with `/`, so it said "the clone's marketplace.json is not readable" while the file was there. The catalog, each plugin's folder, and the plugins view's freshness row now use the shared path helpers (`paths.ts`).
 - fix: **forget history** (Events) and **forget saved views** (Workflows) work on Windows. They ran `rm -f`, which Windows does not have; there the files are emptied through the host file API (saved views as a valid empty document) and the result is verified by what the file holds. Linux and macOS are unchanged.
