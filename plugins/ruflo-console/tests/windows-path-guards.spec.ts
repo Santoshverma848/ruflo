@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import { under } from '../hooks/data/files'
-import { baseOf } from '../hooks/data/paths'
+import { parseInstalled } from '../hooks/data/facts'
+import { baseOf, insideOrSame } from '../hooks/data/paths'
 import { safeInstallPath } from '../hooks/data/research'
 import { isRunFile } from '../hooks/data/wf-drill-io'
 import { isUnder } from '../hooks/wf-cost-live'
+import { installedEntries } from '../hooks/updates'
 import { isRunPath } from '../hooks/wf-actions'
 
 // The console builds paths as `<root>/<name>` even when the root is `C:\Users\x\.claude`, so a run's folder is `C:\Users\x\.claude/projects/...`.
@@ -63,5 +65,58 @@ describe('the project name shown on the menu and boot screen', () => {
     expect(baseOf('C:/Users/x/proj')).toBe('proj')
     expect(baseOf('\\\\srv\\share\\proj')).toBe('proj')
     expect(baseOf('')).toBe('')
+  })
+})
+
+// installed_plugins.json records one entry per install; a project-scope entry names the project it was installed for (a Windows path there).
+const record = (version: string, scope: string, projectPath?: string) => ({ scope, version, installPath: `C:\\cache\\ruflo-console\\${version}`, ...(projectPath !== undefined && { projectPath }) })
+const INSTALLED = JSON.stringify({
+  version: 2,
+  plugins: {
+    'ruflo-console@ruflo': [record('0.44.7', 'project', 'C:\\Users\\x\\git\\other'), record('0.46.0', 'project', 'C:\\Users\\x\\git\\proj'), record('0.47.0', 'user')],
+    'ruflo-swarm@ruflo': [record('0.3.7', 'project', 'C:\\Users\\x\\git\\other')],
+  },
+})
+const versionFor = (cwd?: string, id = 'ruflo-console@ruflo'): string | undefined => parseInstalled(INSTALLED, cwd)?.find(entry => entry.id === id)?.version
+
+describe('which install record applies to a session', () => {
+  it('is the project record for this folder, under any separator style, letter case, or a folder inside the project', () => {
+    for (const cwd of ['C:\\Users\\x\\git\\proj', 'c:/users/X/git/PROJ', 'C:\\Users\\x\\git\\proj\\packages\\app', 'C:\\Users\\x\\git\\proj\\']) expect(versionFor(cwd), cwd).toBe('0.46.0')
+  })
+
+  it("is the user record when no project record is for this folder, and never another project's", () => {
+    expect(versionFor('C:\\Users\\x\\git\\elsewhere')).toBe('0.47.0')
+    expect(versionFor('C:\\Users\\x\\git\\project-two')).toBe('0.47.0')
+    expect(versionFor('C:\\Users\\x\\git\\proj-extra')).toBe('0.47.0')
+    expect(versionFor()).toBe('0.47.0')
+  })
+
+  it('falls back to the first record when there is no user record, as before', () => {
+    expect(versionFor('C:\\Users\\x\\git\\elsewhere', 'ruflo-swarm@ruflo')).toBe('0.3.7')
+    expect(parseInstalled(JSON.stringify({ plugins: { 'a@b': { version: '1.0.0', scope: 'user' } } }))?.[0]?.version).toBe('1.0.0')
+  })
+
+  it('the updater applies the same rule: a session in a subfolder of the project updates the project install', () => {
+    const list = JSON.stringify([
+      { id: 'ruflo-console@ruflo', version: '0.46.0', scope: 'project', projectPath: 'C:\\Users\\x\\git\\proj' },
+      { id: 'ruflo-console@ruflo', version: '0.44.7', scope: 'project', projectPath: 'C:\\Users\\x\\git\\other' },
+      { id: 'ruflo-console@ruflo', version: '0.47.0', scope: 'user' },
+    ])
+    const seen = (cwd: string): string[] => installedEntries(list, cwd).map(entry => `${entry.scope}:${entry.version}`).sort()
+
+    expect(seen('C:\\Users\\x\\git\\proj')).toEqual(['project:0.46.0', 'user:0.47.0'])
+    expect(seen('c:/users/x/git/proj/sub')).toEqual(['project:0.46.0', 'user:0.47.0'])
+    expect(seen('C:\\Users\\x\\git\\elsewhere')).toEqual(['user:0.47.0'])
+  })
+})
+
+describe('insideOrSame', () => {
+  it('holds for the folder itself and what is below it, never for a sibling that shares the prefix', () => {
+    expect(insideOrSame('C:\\a\\b', 'C:/A/B/c')).toBe(true)
+    expect(insideOrSame('C:\\a\\b', 'C:\\a\\b')).toBe(true)
+    expect(insideOrSame('C:\\a\\b', 'C:\\a\\bc')).toBe(false)
+    expect(insideOrSame('/a/b', '/a/b/c')).toBe(true)
+    expect(insideOrSame('/a/b', '/a/B/c')).toBe(false)
+    expect(insideOrSame('', '/a')).toBe(false)
   })
 })

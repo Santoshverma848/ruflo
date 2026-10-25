@@ -179,7 +179,7 @@ describe('what is not an action', () => {
     const { t, running } = await started()
 
     await ask(t, 'auto-workers-list')
-    await settle(500)
+    await until(() => ran().length > before) // the stand-in CLI is a process start: slower than a fixed 500 ms on a loaded or Windows machine
     expect(t.screen()).not.toContain('CONFIRM NEEDED')
     expect(ran().slice(before)[0]).toEqual(expect.arrayContaining(['worker', 'list']))
     t.press('q')

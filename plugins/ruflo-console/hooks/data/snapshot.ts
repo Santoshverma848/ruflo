@@ -135,7 +135,7 @@ export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, 
     federationNodes: disk.federationNodes,
     hasNostrKey: disk.hasNostrKey,
     plugins: {
-      installed: parseInstalled(textOf(disk.home.installed)),
+      installed: parseInstalled(textOf(disk.home.installed), cwd),
       enabled: enabledOf(settings),
       enabledKnown: typeof (settings as { enabledPlugins?: unknown } | null)?.enabledPlugins === 'object' && (settings as { enabledPlugins?: unknown }).enabledPlugins !== null,
       markets,
