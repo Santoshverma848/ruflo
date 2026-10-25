@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Structural + security smoke for ruflo-mods v0.7.0 (ADR-404, ADR-447).
+# Structural + security smoke for ruflo-mods v0.7.1 (ADR-404, ADR-447).
 # Static only: CI has no Claude Code, so the hooks module's behaviour is held
 # by v3/@claude-flow/cli/__tests__/mods/*.test.ts and, where function hooks are
 # on, by `claude plugin test plugins/ruflo-mods`.
@@ -12,9 +12,9 @@ ok()   { printf "PASS\n"; PASS=$((PASS+1)); }
 bad()  { printf "FAIL: %s\n" "$1"; FAIL=$((FAIL+1)); }
 HOOKS="$ROOT/hooks"
 
-step "1. plugin.json declares ruflo-mods 0.7.0"
+step "1. plugin.json declares ruflo-mods 0.7.1"
 grep -q '"name": "ruflo-mods"' "$ROOT/.claude-plugin/plugin.json" \
-  && grep -q '"version": "0.7.0"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
+  && grep -q '"version": "0.7.1"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
 
 step "2. hooks.json names exactly one module and no classic hook commands"
 grep -q '"modules": \["./register.ts"\]' "$HOOKS/hooks.json" && ! grep -q '"command"' "$HOOKS/hooks.json" \
@@ -94,6 +94,14 @@ else printf "SKIP (no sibling ruflo-console)\n"; fi
 step "17. the startup self-check is read-only and fixed-text: no write, no env set, no engine handle, no repository text in the line (ADR-404 addendum)"
 hits=$(grep -nE "\\.write|env\\.set|\\\$\\.|tool\\.call|spawn" "$HOOKS/selfcheck.ts" | grep -vE '^[0-9]+:\s*(\*|//|/\*)' || true)
 [[ -z "$hits" ]] && grep -q "export function selfCheckLine" "$HOOKS/selfcheck.ts" && ok || bad "selfcheck.ts must only read and speak a fixed line: $hits"
+
+step "18. no event is hooked twice without a matcher: the engine refuses the whole module, so the mod would not load (#4485)"
+# Comments stripped, x.on( ignored; a call is unmatched when its second argument is not an object literal. Keep \s*+ possessive.
+dups=$(find "$HOOKS" -type f \( -name '*.ts' -o -name '*.tsx' \) -print0 | xargs -0 perl -0777 -ne '
+  s{/\*.*?\*/}{}gs; s{(^|[^:])//[^\n]*}{$1}g;
+  while (/(?<![\w.\$])on\(\s*([\x27"`])([^\x27"`]+)\1\s*,\s*+(?!\{)/g) { print "$2\n" }
+' | sort | uniq -d | tr '\n' ' ')
+[[ -z "$dups" ]] && ok || bad "hooked twice without a matcher: $dups"
 
 printf "\n%d passed, %d failed\n" "$PASS" "$FAIL"
 [[ $FAIL -eq 0 ]]

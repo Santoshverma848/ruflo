@@ -2,6 +2,10 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-mods`.
 
+## 0.7.1 — 2026-10-25
+- fix: the mod loads again. The `rureOffer` hooks (#4446) registered `session.start`, `tool.call` and `turn.complete` a second time without a matcher, beside `session.ts` and `learn`, and Claude Code refuses a whole hooks module that does that, so ruflo-mods did not load at all in 0.7.0, whatever `rureOffer` was set to. The three hooks now carry a match-all matcher, as `rollup` does (#4485)
+- chore: a smoke step fails when any event is hooked twice without a matcher, since CI has no Claude Code to refuse it; a test drives the offer end to end with `rureOffer` on
+
 ## 0.7.0 — 2026-10-23
 - feat: option `rureOffer` (default off, ADR-498): when the model reads or writes a binary, library, `.asar` or CUDA file inside the project, one line beneath the answer says ruRE can look inside it without running it, and how (`/ruflo run dt-re-auto <path>`, or `rure_analyze_binary` / `rure_analyze_cuda`). Offer only: it never runs ruRE, never denies or edits a call, shows at most three files a turn and twelve a session once each, only validated project-relative paths, and nothing from the file. Inert without a ruRE tool and on subagent answers
 

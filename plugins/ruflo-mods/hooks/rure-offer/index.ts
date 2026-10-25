@@ -19,7 +19,7 @@ export function registerRureOffer(on: On, state: ModState) {
 
   offer.enabled = true
 
-  on('session.start', async ($, e, next) => {
+  on('session.start', { surface: /^[\s\S]*$/ }, async ($, e, next) => {
     const result = await next(e)
 
     try {
@@ -31,7 +31,7 @@ export function registerRureOffer(on: On, state: ModState) {
     return result
   })
 
-  on('tool.call', async ($, e, next) => {
+  on('tool.call', { tool: /^[\s\S]*$/ }, async ($, e, next) => {
     const result = await next(e)
 
     if (!offer.available || (result as { deny?: unknown } | undefined)?.deny !== undefined || !OFFER_TOOLS.has(e.tool)) return result
@@ -43,7 +43,7 @@ export function registerRureOffer(on: On, state: ModState) {
     return result
   })
 
-  on('turn.complete', async ($, e, next) => {
+  on('turn.complete', { reason: /^[\s\S]*$/ }, async ($, e, next) => {
     const result = await next(e)
 
     // Only the main loop's answer carries the line: a subagent's answer goes back to the model that asked for it.
