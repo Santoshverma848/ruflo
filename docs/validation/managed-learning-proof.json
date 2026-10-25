@@ -1,0 +1,167 @@
+{
+  "schema": "ruflo.managed-learning-proof/v1",
+  "assertions": 20,
+  "executions": 260,
+  "trainingRows": 20,
+  "selected": "strict",
+  "weakVerifierFalsePositives": 55,
+  "validSignatureIsCorrectness": false,
+  "weakSignedTrainingSelected": "baseline",
+  "adaptiveAdvantageOverStaticBest": 0,
+  "replayDuplicates": 20,
+  "rounds": [
+    {
+      "planHash": "c305015af4b1b86c35da98ca55dfa7c5201c61ee1310d24e21a0d39d9b5611cd",
+      "round": 1,
+      "independentFamilies": 5,
+      "counts": {
+        "baseline": {
+          "passed": 10,
+          "total": 30
+        },
+        "random": {
+          "passed": 21,
+          "total": 30
+        },
+        "learned": {
+          "passed": 30,
+          "total": 30
+        }
+      },
+      "comparisons": [
+        {
+          "control": "baseline",
+          "decision": {
+            "promote": false,
+            "reason": "insufficient_pairs",
+            "wins": 0,
+            "losses": 0,
+            "pValue": null,
+            "adjustedAlpha": 0.008333333333333333,
+            "baselineSuccessRate": 0,
+            "candidateSuccessRate": 0,
+            "manifestSha256": "ac6f852bc36581276b5dd413de275c6be9a1be2613bcb1c34f26487d8e25f79e"
+          },
+          "relativeLift": null,
+          "noRegression": true,
+          "eligible": false
+        },
+        {
+          "control": "random",
+          "decision": {
+            "promote": false,
+            "reason": "insufficient_pairs",
+            "wins": 0,
+            "losses": 0,
+            "pValue": null,
+            "adjustedAlpha": 0.008333333333333333,
+            "baselineSuccessRate": 0,
+            "candidateSuccessRate": 0,
+            "manifestSha256": "ac6f852bc36581276b5dd413de275c6be9a1be2613bcb1c34f26487d8e25f79e"
+          },
+          "relativeLift": null,
+          "noRegression": true,
+          "eligible": false
+        }
+      ],
+      "missingOutcomes": 0,
+      "experimentEligible": false,
+      "claim": "inconclusive",
+      "reason": "Independent evidence, statistical significance, effect, cost or no-regression gate not satisfied",
+      "defaultsChanged": false,
+      "promotionAuthorized": false,
+      "staticBest": {
+        "strategy": "strict",
+        "passed": 30,
+        "total": 30
+      },
+      "adaptiveAdvantageOverStaticBest": 0
+    },
+    {
+      "planHash": "9c33f6be4cbb28453875006ad70a7660a5089acf41466c30249157a91da21465",
+      "round": 2,
+      "independentFamilies": 5,
+      "counts": {
+        "baseline": {
+          "passed": 10,
+          "total": 30
+        },
+        "random": {
+          "passed": 24,
+          "total": 30
+        },
+        "learned": {
+          "passed": 30,
+          "total": 30
+        }
+      },
+      "comparisons": [
+        {
+          "control": "baseline",
+          "decision": {
+            "promote": false,
+            "reason": "insufficient_pairs",
+            "wins": 0,
+            "losses": 0,
+            "pValue": null,
+            "adjustedAlpha": 0.008333333333333333,
+            "baselineSuccessRate": 0,
+            "candidateSuccessRate": 0,
+            "manifestSha256": "ac6f852bc36581276b5dd413de275c6be9a1be2613bcb1c34f26487d8e25f79e"
+          },
+          "relativeLift": null,
+          "noRegression": true,
+          "eligible": false
+        },
+        {
+          "control": "random",
+          "decision": {
+            "promote": false,
+            "reason": "insufficient_pairs",
+            "wins": 0,
+            "losses": 0,
+            "pValue": null,
+            "adjustedAlpha": 0.008333333333333333,
+            "baselineSuccessRate": 0,
+            "candidateSuccessRate": 0,
+            "manifestSha256": "ac6f852bc36581276b5dd413de275c6be9a1be2613bcb1c34f26487d8e25f79e"
+          },
+          "relativeLift": 4,
+          "noRegression": true,
+          "eligible": false
+        }
+      ],
+      "missingOutcomes": 0,
+      "experimentEligible": false,
+      "claim": "inconclusive",
+      "reason": "Independent evidence, statistical significance, effect, cost or no-regression gate not satisfied",
+      "defaultsChanged": false,
+      "promotionAuthorized": false,
+      "staticBest": {
+        "strategy": "strict",
+        "passed": 30,
+        "total": 30
+      },
+      "adaptiveAdvantageOverStaticBest": 0
+    }
+  ],
+  "liveProviderCalls": 0,
+  "liveImprovementProven": false,
+  "defaultsChanged": false,
+  "limitations": "Existing Ruflo functions executed in subprocesses; baseline is a deliberately shallow validator. Only five correlated source families, synthetic cost units, no LLM tasks or provider billing. Both rounds correctly remain inconclusive; repeated inputs are not independent tasks. Separate processes omit oracle labels and keys but are not an OS security sandbox.",
+  "validation": {
+    "baseCommit": "84a0b3f33dd93b4b3927d111d85e31516fa2cf8c",
+    "protocolAssertions": 38,
+    "strictTypeScript": true,
+    "securityScanner": "Ruflo3.25.6 scoped deep code scan,0 heuristic findings,not an advisory/dependency audit",
+    "sourceHashes": {
+      "v3/@claude-flow/cli/src/services/managed-proof.ts": "9ad1c63c18fef7a7b3f01463c12c6628e6c6c799514cbc7760ce08e07e06ccee",
+      "v3/@claude-flow/cli/src/services/managed-proof/rgi-evaluation.ts": "151fc23d209129a0fb5bd746fc3338831feb3017e208dae5d969ec3b2d42cf6e",
+      "scripts/managed-proof-workloads.mts": "d1d6ec27b3aa6665037dd2fb809aae0e06eabc06022d6b595d367b66ec5de736",
+      "scripts/managed-proof-fixtures.mts": "8360d815eccb9e8abd77417f776aaedbf9ef60e7944a2a6e1b0afba4b6e26191",
+      "scripts/test-managed-proof.mts": "dce2b270ac622ad93bf5b850b9d4cd824bd4b58171e8d364eb1f9b0285a25841",
+      "scripts/e2e-managed-proof.mts": "08bbddbd57d5a988a9dec1a39e23ec271b049ce61357d1d894e2eaffb45e2488",
+      "scripts/managed-proof-worker.mts": "3181aa760a382ef70f286b18e6caf24807bc44aa0119233eea68ef8e900dd07f"
+    }
+  }
+}
