@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 const clone = (value) => structuredClone(value);
 const now = () => new Date().toISOString();
+const validMemoryId = (id) => typeof id === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(id) && id !== '.' && id !== '..' && !/^__.*__$/.test(id);
 
 export class InMemoryStore {
   #tenants = new Map();
@@ -51,6 +52,11 @@ export class InMemoryStore {
     bucket.memories.set(id, clone(value)); this.#audit(bucket, actor, 'memory.remembered', id); return clone(value);
   }
   async listMemories(tenantId, { teamId } = {}) { return [...this.#bucket(tenantId).memories.values()].filter((x) => !teamId || x.teamId === teamId).map(clone); }
+  async getMemory(tenantId, id, { teamId } = {}) {
+    if (!validMemoryId(id)) return null;
+    const value = this.#bucket(tenantId).memories.get(id);
+    return value && (!teamId || value.teamId === teamId) ? clone(value) : null;
+  }
   async usage(tenantId) {
     const b = this.#bucket(tenantId); return { teams: b.teams.size, runs: b.runs.size, tasks: b.tasks.size, memories: b.memories.size, limits: { teams: 1, agentsPerTeam: 3, monthlyTasks: 100, runBudgetUnits: 100 } };
   }
@@ -75,6 +81,11 @@ export async function storeFromEnv(options = {}) {
 
 export class FirestoreStore {
   constructor(db) { this.db = db; }
+  async getMemory(tenantId, id, { teamId } = {}) {
+    if (!validMemoryId(id)) return null;
+    const value = await this.#get(tenantId, 'memories', id);
+    return value && (!teamId || value.teamId === teamId) ? clone(value) : null;
+  }
   #tenant(id) { return this.db.collection('ruflo_ai_team_tenants').doc(id); }
   async #put(tenantId, kind, value) { await this.#tenant(tenantId).collection(kind).doc(value.id).set(value); return clone(value); }
   async #get(tenantId, kind, id) { const snap = await this.#tenant(tenantId).collection(kind).doc(id).get(); return snap.exists ? snap.data() : null; }
@@ -105,3 +116,4 @@ export class FirestoreStore {
     const audit=(await Promise.all(chunks.map(async c=>(await this.#tenant(t).collection('audit').where('targetId','in',c).limit(1000).get()).docs.map(d=>d.data())))).flat().sort((a,b)=>a.at<b.at?-1:a.at>b.at?1:0);
     return {schema:'ruflo.ai-team.evidence.v1',generatedAt:now(),run,team:await this.#get(t,'teams',run.teamId),tasks,audit}; }
 }
+

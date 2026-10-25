@@ -38,9 +38,19 @@ export class TenantVectorMemory {
   }
   invalidate(tenantId) { this.generation++; for(const key of this.indexes.keys())if(key.startsWith(`${tenantId}:`))this.indexes.delete(key); }
   async search(tenantId,{teamId,query,limit=5}) {
+    let canonicalMiss = false;
+    // Canonical key reads bypass capped snapshots and stale vector caches.
+    // Never treat an exact identifier match as semantic confidence or authority.
+    if (typeof query === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(query) && query !== '.' && query !== '..' && !/^__.*__$/.test(query) && typeof this.store.getMemory === 'function') {
+      const memory = await this.store.getMemory(tenantId, query, {teamId});
+      if (memory && memory.id === query && (!teamId || memory.teamId === teamId)) {
+        return {backend:'canonical-exact',degraded:false,results:[{score:1,match:'exact-id',memory}]};
+      }
+      canonicalMiss = true;
+    }
     const idx=await this.#index(tenantId,teamId); const vector=featureVector(query,this.dimensions);
-    if(idx.kind==='ruvector-native') return {backend:idx.kind,degraded:idx.degraded,results:(await idx.db.search({vector,k:limit})).map(r=>({score:r.score,memory:idx.items.get(r.id)})).filter(x=>x.memory)};
-    return {backend:idx.kind,degraded:idx.degraded,results:idx.items.map(x=>({score:cosine(vector,x.v),memory:x.m})).sort((a,b)=>b.score-a.score).slice(0,limit)};
+    if(idx.kind==='ruvector-native') return {backend:idx.kind,degraded:idx.degraded,results:(await idx.db.search({vector,k:limit})).map(r=>({score:r.score,memory:idx.items.get(r.id)})).filter(x=>x.memory && (!canonicalMiss || x.memory.id !== query))};
+    return {backend:idx.kind,degraded:idx.degraded,results:idx.items.filter(x=>!canonicalMiss || x.m.id !== query).map(x=>({score:cosine(vector,x.v),memory:x.m})).sort((a,b)=>b.score-a.score).slice(0,limit)};
   }
 }
 
@@ -60,3 +70,4 @@ export async function vectorMemoryFromEnv(store) {
   }
   catch { return new TenantVectorMemory(store); }
 }
+
