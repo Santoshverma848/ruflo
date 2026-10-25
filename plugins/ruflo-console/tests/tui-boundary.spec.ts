@@ -45,6 +45,10 @@ describe('hooks/ is host-neutral', () => {
     expect(offenders).toEqual([])
   })
 
+  it('names every environment variable it reads or writes with a literal: the engine lists them, and `claude plugin validate` refuses a computed name (the mod then does not load)', () => {
+    expect(hooks.filter(({ text }) => /\$\.env\.(get|set)\(\s*(?!['"])/.test(text)).map(({ file }) => file)).toEqual([])
+  })
+
   it('reaches the engine only from register.ts and model-tools.ts', () => {
     expect(hooks.filter(({ text }) => ENGINE.test(text)).map(({ file }) => file).sort()).toEqual(ENGINE_ONLY)
   })

@@ -25,7 +25,7 @@ export type SendDeps = Pick<Host, 'toolCall' | 'toolCheck' | 'run' | 'httpSend' 
   cwd: string
   hive: HiveInfo | null
   config: Config
-  /** Reads one environment variable. Set on Windows, which has no `printenv`; where absent a key is read with `printenv`. */
+  /** Reads a model key from the environment. Set on Windows, which has no `printenv` (and where the engine allows only a literal variable name, so only $OPENROUTER_API_KEY); where absent a key is read with `printenv`. */
   readEnv?: (name: string) => Promise<string | undefined>
 }
 
@@ -210,7 +210,10 @@ export async function sendTo(deps: SendDeps, target: Target, raw: string): Promi
           key = read !== undefined && read.exitCode === 0 ? read.stdout.trim() : undefined
         }
 
-        if (key === undefined || key === '') return err('refused', `$${endpoint.keyEnv} is not set in the environment Claude Code runs in: nothing was sent`)
+        // Where the environment read stands in for printenv (Windows) it can name only the OpenRouter key: the engine lists the variables a module reads.
+        const unreadable = deps.readEnv !== undefined && endpoint.keyEnv !== 'OPENROUTER_API_KEY'
+
+        if (key === undefined || key === '') return err('refused', unreadable ? `$${endpoint.keyEnv} cannot be read here: on Windows the console can read only $OPENROUTER_API_KEY from the environment. Nothing was sent` : `$${endpoint.keyEnv} is not set in the environment Claude Code runs in: nothing was sent`)
       }
 
       const response = await deps.httpSend(`${endpoint.baseUrl}/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json', ...(key !== undefined && { authorization: `Bearer ${key}` }) }, body: chatBody(endpoint, body) }).catch((error: unknown) => ({ ok: false, status: 0, text: error instanceof Error ? error.message : 'refused' }))

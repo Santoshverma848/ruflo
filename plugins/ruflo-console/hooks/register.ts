@@ -126,7 +126,9 @@ function hostOf($: EngineInterface, cwd: string, toasts: { prefs: () => ToastPre
       return homeOf(k => envVars[k])
     },
     configDir: async () => $.env.get('CLAUDE_CONFIG_DIR'),
-    env: async name => $.env.get(name),
+    // The engine lists the variables a module reads, so $.env.get takes a literal name (`claude plugin validate` refuses a computed one, and the mod then does not load):
+    // the one model key the console's own OpenRouter target names is readable here; any other name is not.
+    env: async name => (name === 'OPENROUTER_API_KEY' ? $.env.get('OPENROUTER_API_KEY') : undefined),
     pluginRoot: $.plugin.root,
     // `$.ruflo` exists only where ruflo-mods is seated; validate refuses feature-detecting a noun, so these are
     // async: a missing noun throws inside the promise and every caller's catch sees a rejection.

@@ -51,9 +51,21 @@ describe('reading a model key for an endpoint send', () => {
       const result = await sendTo(r.deps, r.target, 'hello')
 
       expect(result.state).toBe('refused')
-      expect(result.text).toContain('KEY_A is not set')
+      // KEY_A is a custom name: the engine allows only literal variable names, so it says it cannot be read here, not that it is unset
+      expect(result.text).toContain('KEY_A cannot be read here')
+      expect(result.text).toContain('only $OPENROUTER_API_KEY')
       expect(r.headers).toEqual([])
     }
+  })
+
+  it('says the OpenRouter key is not set when that read finds none', async () => {
+    const r = rig(async () => undefined)
+    const openrouter = targetsOf({ agents: [], peers: [], config: r.deps.config, hasHive: false, hasCodex: false }).find(candidate => candidate.id === 'openrouter') as Target
+    const result = await sendTo(r.deps, openrouter, 'hello')
+
+    expect(result).toMatchObject({ ok: false, state: 'refused' })
+    expect(result.text).toContain('OPENROUTER_API_KEY is not set')
+    expect(r.headers).toEqual([])
   })
 
   it('keeps `printenv` where no environment read is given (Linux, macOS)', async () => {
