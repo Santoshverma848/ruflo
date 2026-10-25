@@ -105,3 +105,25 @@ cost and latency with complete paired outcomes. Any missing or unknown spend
 keeps the run diagnostic and prevents promotion. The initial runners always
 report `transferProven: false`; their results are evidence for subsequent review,
 not an automatic statistical or release authority.
+
+## Actual results and next guarded host version
+
+[The actual Kimi and Agent Booster report](../../../../docs/validation/managed-kimi-and-booster.md)
+records 98 completed Kimi calls with all audit arms 30/30, but a reused diagnostic
+corpus and identical source/target compact policies. Marginal code-only output
+cost decreased versus an explanatory baseline; weights, reasoning and native
+Ruflo learning were not improved or qualified by that observation.
+
+Actual Booster accepted nine merges and eight were correct; a confidence .548
+fuzzy merge duplicated solve and left the old binding active. Raw Booster remains
+8/10 versus direct 10/10. The next closed application guard uses independent
+acceptance and permits verified direct fallback only for a host-declared complete
+source request. Partial patches never receive that fallback. Actual posthoc strict
+oracle replay accepted eight Booster outputs plus two verified direct fallbacks,
+not ten correct raw Booster merges. No threshold was retuned.
+
+A desktop restart also interrupted the first Kimi attempt. The next host version
+now uses durable intent/receipt fencing and optional explicit fixed ruOS placement
+(ADR0007). Its actual canary is separate from the archived model experiments;
+source snapshots and all failure evidence remain retained. There is no automatic
+promotion from lower cost, successful transport or merge confidence.

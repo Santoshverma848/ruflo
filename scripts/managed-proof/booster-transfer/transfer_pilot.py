@@ -10,6 +10,8 @@ import time
 from decimal import Decimal
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+import effect_journal as journal
+from journaled_openrouter import JournaledOpenRouter
 from actor_pilot import fresh_manifest, run_oracle, digest
 from actor_pilot_v1 import STRATEGIES
 from openrouter_client import MODEL, CATALOG, catalog_model, complete, request_json
@@ -68,6 +70,8 @@ def summarize(rows, audit):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--manifest', required=True)
+    parser.add_argument('--journal-root')
+    parser.add_argument('--ruos-placement',action='store_true')
     parser.add_argument('--source-policy', required=True)
     parser.add_argument('--root', required=True)
     parser.add_argument('--budget', default='.50')
@@ -84,20 +88,22 @@ def main():
         reject_history(corpus, args.history)
     # Fetch only the fixed official catalog. No secret is needed for discovery.
     model = catalog_model(request_json(CATALOG), MODEL)
-    root = pathlib.Path(args.root)
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root = journal.prepare_root(args.root)
+    journal_root=pathlib.Path(args.journal_root) if args.journal_root else root/'effects'
     oracle = pathlib.Path(__file__).resolve().parent.parent / 'actor_pilot.py'
-    plan = {'version': 1, 'kind': 'openrouter-prompt-transfer', 'model': model, 'sourcePolicy': policy,
+    plan = {'version': 2, 'durableEffectJournal':journal.SCHEMA, 'kind': 'openrouter-prompt-transfer', 'model': model, 'sourcePolicy': policy,
             'corpus': corpus, 'budgetUSD': str(budget), 'maxTokens': 768, 'reasoning': 'none',
             'seed': 4474, 'diagnosticReuse': args.diagnostic_reuse, 'proofEligible': False,
             'oracleSha256': hashlib.sha256(oracle.read_bytes()).hexdigest(),
             'helperSha256':{name:hashlib.sha256((pathlib.Path(__file__).parent/name).read_bytes()).hexdigest() for name in ['openrouter_client.py']},
-            'oracleHelperSha256':{name:hashlib.sha256((oracle.parent/name).read_bytes()).hexdigest() for name in ['actor_pilot.py','actor_pilot_v1.py','cost_endpoint.py']},
+            'oracleHelperSha256':{name:hashlib.sha256((oracle.parent/name).read_bytes()).hexdigest() for name in ['actor_pilot.py','actor_pilot_v1.py','cost_endpoint.py','effect_journal.py','ruos_credential.py','journaled_openrouter.py']},
             'runnerSha256': hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
             'modelDoesNotLearnWeights': True, 'boosterUsed': False,
             'limits': 'Task-level prompt transfer only; fresh schema is not proof of independent tasks or correct oracle. No automatic promotion.'}
     with (root/'plan.json').open('x') as file:
-        json.dump({'hash': digest(plan), 'plan': plan}, file, indent=2)
+        json.dump({'hash': digest(plan), 'plan': plan}, file, indent=2);file.flush();os.fsync(file.fileno())
+    journal.sync_directory(root)
+    caller=JournaledOpenRouter(journal_root,digest(plan),budget,allow_ruos_placement=args.ruos_placement)
     rows, spent, target_choice, error = [], Decimal(0), None, None
     deadline = time.monotonic() + 600
 
@@ -111,9 +117,9 @@ def main():
         row = {'task': task['id'], 'split': split, 'arm': arm, 'strategy': strategy, 'passed': False,
                'costUSD': None, 'finished': False, 'outputHash': digest(''), 'output': ''}
         try:
-            response = complete(model, prompt, budget-spent)
+            response = caller.complete(model,prompt,budget-spent,digest({'plan':digest(plan),'split':split,'task':task['id'],'arm':arm,'strategy':strategy}))
             row['costUSD'] = response['costUSD']; spent += Decimal(str(response['costUSD']))
-            row['finished'] = response['finished']; row['model'] = response['model'];row['providerReceipt']=response['providerReceipt'];row['requestDigest']=response['requestDigest']
+            row['finished'] = response['finished']; row['model'] = response['model'];row['providerReceipt']=response['providerReceipt'];row['requestDigest']=response['requestDigest'];row['effectJournal']=response['effectJournal']
             row['output'] = response['content']; row['outputHash'] = digest(response['content'])
             try:
                 code = json.loads(response['content'])['code']
@@ -147,7 +153,7 @@ def main():
         result={'kind':plan['kind'],'planHash':digest(plan),'model':model['id'],'targetChoice':target_choice,
                 'knownProviderCostUSD':float(spent),'unknownSpend':any(r['costUSD'] is None for r in rows),
                 'summary':summarize(rows,corpus['audit']),'calls':len(rows),'terminalError':error,
-                'diagnosticReuse':args.diagnostic_reuse,'transferProven':False,'modelWeightLearning':False,
+                'diagnosticReuse':args.diagnostic_reuse,'durableEffectJournalEnabled':True,'transferProven':False,'modelWeightLearning':False,
                 'promotionAuthorized':False,'defaultsChanged':False}
         (root/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result),flush=True)
     if error:

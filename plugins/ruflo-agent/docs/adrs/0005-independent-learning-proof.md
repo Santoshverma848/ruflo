@@ -155,3 +155,9 @@ source-bound execution. Native cost precision remains unresolved: integer-cent
 observations cannot faithfully rank subcent actor calls. A precise, versioned
 native cost contract and independently signed native-admission receipts need a
 new implementation and fresh experiment rather than reconstructed provenance.
+
+The style baseline requested an explanation field that the common code-only
+grader did not require. Cost savings therefore include removing unnecessary
+narrative, not improved reasoning. A future production comparison must freeze
+identical required output features in both arms, including explanations if they
+are part of the workload contract.

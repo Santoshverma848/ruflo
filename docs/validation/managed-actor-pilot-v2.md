@@ -35,6 +35,13 @@ All 98 calls completed; total SDK-reported cost including training was **$0.4765
 | Fixed baseline | 24.739% | 22 / 8 | 0.0080624 | Pass, conditional on task independence and oracle validity |
 | Random control | 10.231% | 15 / 15 | 0.5722322 | Fail |
 
+Training itself cost $0.0374632 across all eight calls. Including that overhead,
+the learned first 30-task batch would cost $0.1650044 versus fixed $0.1694662:
+only **2.63% net first-batch reduction**, not 24.739%. At the observed means,
+training breaks even after about 26.8 similar tasks. That is descriptive arithmetic,
+not a production forecast; experimental control arms, verification and VM costs
+are additional.
+
 The lower aggregate cost against random is not enough: wins and losses were split
 evenly across tasks, failing the frozen paired test. Latency and observed per-task
 correctness gates passed. Overall conjunction: **false**.
@@ -61,7 +68,11 @@ managed learning, contextual routing, weight updates or AVO release qualificatio
 The task corpus is hand-curated programming microtasks; 30 labels do not prove
 30 independent production task families. Provider model and cache accounting are
 SDK-reported, not independently reconciled invoices. A universally better static
-compact prompt remains an alternative explanation.
+compact prompt remains an alternative explanation. The fixed baseline requested
+an extra explanation field, while the common grader evaluated code only. Removing
+that unnecessary narrative is a legitimate output-cost optimization; it does not
+establish better reasoning or full feature equivalence for production workflows
+that actually require explanations or audit narratives.
 
 The existing native learning schema stores integer cents. Subcent provider calls
 collapse under rounding, while this Python selector used float USD. A prospective
@@ -88,7 +99,12 @@ not a total RSS, tmpfs or process-count control.
 
 Nineteen offline Python tests pass, including actual Node VM tests for prototype
 keys, constructor bridges, dynamic code generation, mutation, nonfinite output,
-toJSON and intrinsic tampering. V3 has not run a new model confirmation campaign.
+toJSON and intrinsic tampering. All 98 recorded v2 outputs were subsequently replayed through the frozen strict
+v3 oracle on ruOS: [98/98 passed](managed-actor-pilot-v2-strict-replay.json), with
+zero new provider calls and cost. This is a diagnostic stricter verification,
+not a new audit or repair of the failed cost endpoint. The original random-control
+failure remains unchanged. Separate Kimi transfer and Agent Booster application
+runs use the frozen v3 source and are reported independently.
 
 ## Prospective continuation
 

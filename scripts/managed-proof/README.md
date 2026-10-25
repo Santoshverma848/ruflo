@@ -36,3 +36,16 @@ The archived v1/v2 results and limitations are in
 Generated code runs in bubblewrap with no home/network/credential environment.
 The Node old-heap setting is not a total OS memory limit. Use host resource controls
 before treating this as an adversarial multi-tenant execution service.
+
+
+Next host transfer/edit entrypoints now use `journaled_openrouter.py` and the
+private `effect_journal.py` admission ledger. A tiny actual canary recorded one
+provider receipt and blocked a duplicate before another paid completion. This
+is separate from historical model experiments; it does not repair their lost
+request history. `ruos_credential.py` permits only explicit fixed placement lookup,
+never shell sourcing or arbitrary credential selection.
+
+`verified_application.py` rejects confidence-only acceptance and permits verified
+full-source fallback only for the frozen host complete-source request format.
+The actual known-case guard replay accepted 8 Booster outputs plus 2 direct
+fallbacks; raw Booster is still 8/10. See the actual experiment reports.

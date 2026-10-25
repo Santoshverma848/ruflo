@@ -26,5 +26,7 @@
   },
   "immutableTransportArchiveSha256": "2190daf0ac00954dfa4c3bf07201fc9405f97dc39c6e82addc0f8b3735e74b8f",
   "archiveBytes": 30266,
-  "boundary": "Frozen source snapshot for root-owned future Kimi/Agent Booster execution. Source freeze and offline checks are not completed transfer results."
+  "boundary": "Exact historical v3 source used for completed/interrupted Kimi and raw Booster experiments, not the next journal-aware/verified-selection code.",
+  "sourceCommit": "488d98293b567730ecfb4a6eb8a75dd2d3a92061",
+  "archiveFile": "managed-transfer-v3-source.tar.gz"
 }

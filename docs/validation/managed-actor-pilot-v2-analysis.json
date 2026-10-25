@@ -101,5 +101,12 @@
       "fresh-json-pointer"
     ],
     "finding": "Recorded Dijkstra programs explicitly convert unreachable Infinity to null; no observed NaN/toJSON/JSON tampering false pass found. Generic nonfinite coercion and mutable-intrinsic holes in v2 are fixed only in the next offline v3 version."
+  },
+  "posthocEconomicDescription": {
+    "trainingReportedCostUSD": "0.0374632000000000012",
+    "learnedPlusTrainingReportedCostUSD": "0.1650044000000000055",
+    "netFirstBatchReportedCostReduction": "0.0263285540125405408894689110",
+    "breakEvenSimilarTasksAtObservedMeans": "26.80729874776386547707975845",
+    "scope": "Descriptive SDK-reported economics, not a new statistical endpoint or production forecast; excludes experiment controls, VM and verification costs."
   }
 }
