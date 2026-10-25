@@ -275,7 +275,7 @@ This adds slash commands and agent definitions. `ruflo-core` (installed above) d
 
 | Plugin | What it does |
 |--------|-------------|
-| [**ruflo-agent**](plugins/ruflo-agent/README.md) | Run agents — local WASM sandbox (rvagent) + Anthropic Claude Managed Agents (cloud) |
+| [**ruflo-agent**](plugins/ruflo-agent/README.md) | Run agents — local WASM sandbox (rvagent) + Anthropic Claude Managed Agents (cloud), with opt-in bounded dynamic workflows, gated session controls and verified advisory learning |
 | [**ruflo-plugin-creator**](plugins/ruflo-plugin-creator/README.md) | Scaffold, validate, and publish your own plugins |
 
 #### Domain-Specific
