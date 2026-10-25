@@ -17,7 +17,6 @@
  *   managed_agent_list     → GET /v1/sessions
  *   managed_agent_terminate→ DELETE /v1/sessions/{id} (+ optionally the env)          ↔ wasm_agent_terminate
  */
-import { createHmac, randomBytes } from 'node:crypto';
 import { managedLearningTool } from './managed-learning-tool.js';
 import { ManagedRunCollector } from '../services/managed-run-collector.js';
 import { collectWithLease, executeManagedControl, publishManagedSnapshot, publishManagedTermination } from '../services/managed-run-store.js';
@@ -122,10 +121,16 @@ async function fetchSessionEvents(sessionId: string, since?: string, threadId?: 
 
 let collectorScope = '';
 let collector = new ManagedRunCollector();
-// The scope only answers "did the project, endpoint or credential change since this collector was built" and never
-// leaves the process, so it is a keyed digest under a random per-process key: the API key is never hashed bare.
-const SCOPE_KEY = randomBytes(32);
-function currentCollectorScope() { return createHmac('sha256', SCOPE_KEY).update(JSON.stringify([getProjectCwd(), apiBase(), apiKey()])).digest('hex'); }
+// The scope only answers "did the project, endpoint or credential change since this collector was built". It never leaves the
+// process, so it is a generation number, not a digest: the API key is compared in memory (it already lives in the environment)
+// and is never fed to a hash function. Returning to an earlier value counts as a change, which is the safe direction.
+let scopeInput = '';
+let scopeGeneration = 0;
+function currentCollectorScope() {
+  const input = JSON.stringify([getProjectCwd(), apiBase(), apiKey()]);
+  if (input !== scopeInput) { scopeInput = input; scopeGeneration++; }
+  return `scope-${scopeGeneration}`;
+}
 function scopedCollector() {
   const scope = currentCollectorScope();
   if (scope !== collectorScope) { collector = new ManagedRunCollector(); collectorScope = scope; }
