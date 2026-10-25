@@ -98,6 +98,7 @@ export function evaluateProof(root: string, plan: ProofPlan, receipts: OracleRec
     const row = (taskId:string,arm:string)=>rows.find(r=>r.taskId===taskId&&r.arm===arm);
     const families = [...new Set(plan.tasks.map(t=>t.family))].sort();
     if (families.some(f=>new Set(plan.tasks.filter(t=>t.family===f).map(t=>t.domain)).size!==1)) throw Error('Family crosses independent domains');
+    const p95 = (arm:OracleObservation['arm']) => plan.tasks.map(t=>row(t.id,arm)?.latencyMs??plan.timeoutMs).sort((a,b)=>a-b)[Math.ceil(plan.tasks.length*.95)-1]!;
     const comparisons = (['baseline','random'] as const).map(control=> {
       const pairs = families.map(f=> {
         const tasks = plan.tasks.filter(t=>t.family===f);
@@ -110,9 +111,10 @@ export function evaluateProof(root: string, plan: ProofPlan, receipts: OracleRec
       const relativeLift = baselineSuccess ? learnedSuccess/baselineSuccess-1 : null;
       // Keep the existing Ruflo per-task no-regression rule stricter than rGi's domain aggregate.
       const noRegression = plan.tasks.every(t=>!success(row(t.id,control))||success(row(t.id,'learned')));
-      return { control,decision,relativeLift,noRegression,eligible:decision.promote&&relativeLift!==null&&relativeLift>=plan.minRelativeLift-Number.EPSILON&&noRegression };
+      const latencyNoRegression = p95('learned')<=p95(control);
+      return { control,decision,relativeLift,noRegression,latencyNoRegression,baselineP95Ms:p95(control),learnedP95Ms:p95('learned'),eligible:decision.promote&&relativeLift!==null&&relativeLift>=plan.minRelativeLift-Number.EPSILON&&noRegression&&latencyNoRegression };
     });
-    const counts = Object.fromEntries((['baseline','random','learned'] as const).map(arm=>[arm,{ passed:plan.tasks.filter(t=>success(row(t.id,arm))).length,total:plan.tasks.length }]));
+    const counts = Object.fromEntries((['baseline','random','learned'] as const).map(arm=>[arm,{ passed:plan.tasks.filter(t=>success(row(t.id,arm))).length,total:plan.tasks.length,costMicros:plan.tasks.reduce((n,t)=>n+(row(t.id,arm)?.costMicros??plan.budgetMicros),0),p95Ms:p95(arm) }]));
     const experimentEligible = comparisons.every(c=>c.eligible);
     return { planHash:digest(plan),round:plan.round,independentFamilies:families.length,counts,comparisons,missingOutcomes:plan.tasks.length*3-rows.length,experimentEligible,
       claim:experimentEligible&&plan.evidenceClass==='live-provider'&&plan.costOrigin==='metered'?'bounded-live-improvement':'inconclusive',

@@ -12,7 +12,7 @@ verification failure mode and rejects an attractive but unsupported success clai
 | Check | Observed result |
 | --- | --- |
 | Strict TypeScript | Passed |
-| Protocol assertions | 38 passed, including positive synthetic statistical fixtures |
+| Protocol assertions | 44 passed, including positive synthetic statistical fixtures |
 | Executable local workload assertions | 20 passed |
 | Actual worker subprocesses | 260 |
 | Training | 20 signed outcomes, ten disjoint inputs for each of two strategies |
@@ -67,7 +67,7 @@ and a competitive static best control. Freeze training/selection and the full
 search family before revealing fresh audit tasks. Use actual metered actor work,
 independent hidden tests and source-bound artifacts. Require at least 10% lift,
 family-corrected significance, no task/domain safety or quality regressions and
-no cost increase. More cases from the same function must not inflate independence.
+no cost increase and no p95 latency regression. More cases from the same function must not inflate independence.
 
 This host-only API does not start Autogenous, rGi or AVO runtimes. It directly
 reuses the pure rGi evaluator and adopts the other systems' bounded variation and

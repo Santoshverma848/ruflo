@@ -29,7 +29,7 @@ Add a separate host evaluation process with a persistent, bounded campaign:
    Bonferroni alpha .05/6 for two controls across at most three registered rounds,
    domain nonregression, cost ratio at most one and capability vetoes. Add the
    stricter existing Ruflo per-task no-regression rule and at least 10% relative
-   success lift against each control. A zero-success baseline cannot establish a
+   success lift against each control, with learned p95 latency no worse than either control. A zero-success baseline cannot establish a
    relative improvement claim.
 7. Return an advisory result only. Live improvement classification additionally
    requires host-labelled live-provider and metered-cost evidence. Local execution
