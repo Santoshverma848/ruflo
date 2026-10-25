@@ -2,6 +2,10 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
+## 0.4.1 — 2026-10-25
+- fix: the dynamic-workflow guard now reads call arguments wrapped as `tool_input`, `params`, `args` or `parameters` (as well as `input` and `arguments`), and refuses a wrapper that is not an object or two competing wrappers; before, an unrecognised wrapper was read as a flat envelope with no policy fields and the call was allowed
+- fix: a session, thread or environment id of `.` or `..` is refused before any request is sent (`encodeURIComponent` leaves it unchanged, so `/v1/sessions/..` would have resolved to `/v1/`)
+
 ## 0.4.0 — 2026-10-24
 - feat: verified feedback cycles, independent host verification, atomic admission and isolated native memory with replay and policy checks
 - fix: `managed_agent_prompt` could report the previous turn's answer as finished on a later poll while the new turn was still running; only events from the acknowledged message onward are tracked

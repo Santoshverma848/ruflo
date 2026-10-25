@@ -342,4 +342,11 @@ The following are **known limits that this change does not remove**. They are wh
    queued while the session was busy, and whether `max_list_cost.amount` is in cents. Both need the live-provider canary that is
    still an open release gate.
 
-A native-memory child process is a process boundary, not an OS memory or network sandbox.
+8. **Dynamic-mode egress is model-chosen.** When `dynamicWorkflows` is on, `allowedHosts`, `initScript`, `mcpServers` URLs and `packages`
+   are chosen by the model and constrained only by `networking: limited`; there is no plugin-level host allowlist.
+9. **Unconfirmed guard envelope.** The dynamic-workflow guard reads the arguments from `input`, `arguments`, `tool_input`, `params`, `args`
+   or `parameters`, or from a flat event. A host that names the field something else would not be seen by the guard (it only tightens
+   `managed_agent_create`; it never loosens another gate).
+
+A native-memory child process is a process boundary, not an OS memory or network sandbox. Its offline mode relies on a library flag
+on the module instance that is loaded, and the size of an IPC message is checked after it is parsed.

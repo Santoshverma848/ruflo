@@ -62,6 +62,8 @@ async function maRequest<T = unknown>(
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; error: string; body?: unknown }> {
   const key = apiKey();
   if (!key) return { ok: false, status: 0, error: NEEDS_KEY.error };
+  // encodeURIComponent leaves '.' and '..' alone, so an id of '..' would walk up the API path (/v1/sessions/.. is /v1/).
+  if (path.split('?')[0].split('/').some(segment => segment === '.' || segment === '..')) return { ok: false, status: 0, error: 'Invalid managed resource id' };
   try {
     const res = await fetch(`${apiBase()}/v1${path}`, {
       method, headers: headers(key), redirect: 'error',

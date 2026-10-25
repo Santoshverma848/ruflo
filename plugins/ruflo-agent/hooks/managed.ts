@@ -5,13 +5,20 @@ export const MANAGED_TOOLS = ['managed_agent_capabilities', 'managed_agent_learn
 
 const record = (v: unknown): Record<string, unknown> | undefined => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined
 
-/** Host tool envelopes may be flat or hold arguments in input/arguments. Never scan arbitrary descendants as policy. */
+/** Argument wrappers a host may use. Only these are read; arbitrary descendants are never scanned as policy. */
+const WRAPPERS = ['input', 'arguments', 'tool_input', 'params', 'args', 'parameters'] as const
+
+/**
+ * Host tool envelopes may be flat or hold the arguments in one wrapper. A wrapper that is not an object, two wrappers, or a wrapper
+ * next to a flat `dynamicWorkflows` are ambiguous, so they are refused (undefined) rather than read as an envelope with no policy fields.
+ */
 export function managedInput(event: unknown): Record<string, unknown> | undefined {
   const e = record(event)
   if (!e) return undefined
-  if ('input' in e) return e.dynamicWorkflows !== undefined || 'arguments' in e ? undefined : record(e.input)
-  if ('arguments' in e) return e.dynamicWorkflows !== undefined ? undefined : record(e.arguments)
-  return e
+  const present = WRAPPERS.filter(k => k in e)
+  if (present.length === 0) return e
+  if (present.length > 1 || e.dynamicWorkflows !== undefined) return undefined
+  return record(e[present[0]!])
 }
 
 export function managedName(tool: string): string | undefined {

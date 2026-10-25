@@ -35,6 +35,16 @@ describe('mod admission', () => {
     expect(managedVerdict(create, input, enabled)).toContain('predefined');
     expect(managedVerdict(create, input, readOptions({ managedWorkflows: 'on', allowInlineAgents: 'on' }))).toBeUndefined();
   });
+  it.each(['tool_input', 'params', 'args', 'parameters'])('applies the policy to arguments wrapped as %s instead of letting them through', wrapper => {
+    // An unrecognised wrapper used to be read as a flat envelope with no dynamicWorkflows field, so the call was allowed.
+    expect(managedVerdict(create, { [wrapper]: { ...valid, budgetCents: '2501' } }, enabled)).toContain('budget');
+    expect(managedVerdict(create, { [wrapper]: valid }, enabled)).toBeUndefined();
+    expect(managedVerdict(create, { [wrapper]: valid }, readOptions(undefined))).toContain('off');
+  });
+  it('denies a wrapper that is not an object, and two competing wrappers', () => {
+    expect(managedVerdict(create, { tool_input: 'dynamicWorkflows' }, enabled)).toContain('malformed');
+    expect(managedVerdict(create, { tool_input: valid, params: { ...valid, budgetCents: '1' } }, enabled)).toContain('malformed');
+  });
   it('reads flat and nested envelopes and rejects ambiguous input', () => {
     expect(managedVerdict(create, { input: valid }, enabled)).toBeUndefined();
     expect(managedVerdict(create, { arguments: valid }, enabled)).toBeUndefined();

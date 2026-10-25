@@ -220,6 +220,32 @@ describe('transport and cleanup security', () => {
   });
 });
 
+describe('resource ids cannot walk the API path', () => {
+  // encodeURIComponent('..') is '..', so an id of '..' would send GET /v1/sessions/.. which normalises to /v1/.
+  it.each([
+    ['managed_agent_status', { sessionId: '..' }],
+    ['managed_agent_status', { sessionId: '.' }],
+    ['managed_agent_events', { sessionId: '..' }],
+    ['managed_agent_events', { sessionId: 'sesn_a', threadId: '..' }],
+    ['managed_agent_prompt', { sessionId: '..', message: 'x' }],
+    ['managed_agent_terminate', { sessionId: '..' }],
+  ])('%s %j sends nothing', async (tool, input) => {
+    const result = await call(tool, input);
+    expect(Boolean(result.error) || result.success === false).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('terminate will not delete an environment named ..', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const result = await call('managed_agent_terminate', { sessionId: 'sesn_a', environmentId: '..' });
+    expect(result.environmentDeleted).toBe(false);
+    expect(fetchMock.mock.calls.every(c => !String(c[0]).includes('/environments'))).toBe(true);
+  });
+  it('ordinary ids are still sent', async () => {
+    fetchMock.mockImplementation(() => json({ id: 'sesn_a', status: 'idle' }));
+    expect(await call('managed_agent_status', { sessionId: 'sesn_a' })).toMatchObject({ sessionId: 'sesn_a', status: 'idle' });
+  });
+});
+
 describe('failures after a prompt was already sent', () => {
   it('reports the message id so a retry does not send a duplicate', async () => {
     fetchMock.mockResolvedValueOnce(json({ data: [event('sent', 'user.message', { processed_at: null })] })).mockImplementation(() => json({}, 500));
