@@ -74,3 +74,8 @@ reuses the pure rGi evaluator and adopts the other systems' bounded variation an
 claim separation patterns. It cannot globally prevent a privileged host from
 resetting campaign state or lying about evidence origin; operational custody and
 independent evaluation remain necessary.
+
+A separate [actual Claude actor pilot](managed-actor-pilot-v1.md) subsequently ran
+98 model calls. Its observed cost reduction is qualified by a confirmed grader
+bug and is not accepted as proof. It does not change the local experiment result
+or the existing quality-lift gate.

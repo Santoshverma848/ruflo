@@ -6,6 +6,7 @@ on:
       - 'v3/@claude-flow/cli/src/services/managed-proof/**'
       - 'v3/@claude-flow/cli/src/services/managed-learning*'
       - 'scripts/*managed-proof*'
+      - 'scripts/managed-proof/**'
       - '.github/workflows/managed-learning-proof.yml'
   workflow_dispatch:
 permissions:
@@ -35,6 +36,8 @@ jobs:
           node "$RUNNER_TEMP/proof-build/scripts/test-managed-proof.mjs"
           node "$RUNNER_TEMP/proof-build/scripts/e2e-managed-proof.mjs" > "$RUNNER_TEMP/managed-proof-result.json"
           cat "$RUNNER_TEMP/managed-proof-result.json"
+      - name: Offline actor and oracle hardening regressions
+        run: python3 -m unittest discover -s scripts/managed-proof -p 'test_*.py'
       - uses: actions/upload-artifact@v4
         with:
           name: managed-proof-node-${{ matrix.node }}

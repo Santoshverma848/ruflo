@@ -118,3 +118,22 @@ correlated-case inflation. Positive statistical fixtures must pass while local
 workloads remain ineligible for live improvement claims. Broader proof requires
 fresh, independently curated production-like tasks, sensible fixed and static
 best controls, separately operated oracle and actual metered actor execution.
+
+## Actual actor pilot amendment
+
+The [v1 ruOS Claude actor pilot](../../../../docs/validation/managed-actor-pilot-v1.md)
+ran 98 real calls for $0.4848662 SDK-reported cost. A training-selected compact
+prompt reduced audit cost 37.54% against fixed and 25.39% against random, with the
+same 27/30 declared oracle passes. Independent review then found a genuine oracle
+bug: embedding expected `__proto__` properties as JavaScript literals rejected a
+correct solution. Signature validity or equal pass counts cannot repair that.
+Exact source, inputs, outputs and measurements are retained; no retrospective
+score correction is accepted as new evidence.
+
+A separate fresh v2 global-prompt cost endpoint must be frozen before inference:
+10% reduction against both controls, paired cost sign tests at .025 per control,
+no per-task correctness or p95 regression and complete audit/cost accounting.
+This is a distinct optimization objective, not a relaxation of the quality-lift
+gate. The Python actor selector is not native Ruflo learning; integer-cent native
+cost precision remains an integration gap for subcent model calls. No automatic
+policy or routing promotion is granted.
