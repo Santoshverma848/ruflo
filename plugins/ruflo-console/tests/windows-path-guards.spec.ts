@@ -91,9 +91,24 @@ describe('which install record applies to a session', () => {
     expect(versionFor()).toBe('0.47.0')
   })
 
-  it('falls back to the first record when there is no user record, as before', () => {
-    expect(versionFor('C:\\Users\\x\\git\\elsewhere', 'ruflo-swarm@ruflo')).toBe('0.3.7')
+  it("is no record, not another project's, when none applies and there is no user record (#4496)", () => {
+    expect(versionFor('C:\\Users\\x\\git\\elsewhere', 'ruflo-swarm@ruflo')).toBeUndefined()
+    expect(versionFor('C:\\Users\\x\\git\\other', 'ruflo-swarm@ruflo')).toBe('0.3.7')
+  })
+
+  it('without a folder to judge by, takes the user record, else the first', () => {
     expect(parseInstalled(JSON.stringify({ plugins: { 'a@b': { version: '1.0.0', scope: 'user' } } }))?.[0]?.version).toBe('1.0.0')
+    expect(versionFor(undefined, 'ruflo-swarm@ruflo')).toBe('0.3.7')
+  })
+
+  it('prefers the record for the exact project over one for a parent folder, in any file order (#4496)', () => {
+    const parent = record('0.40.0', 'project', 'C:\\Users\\x\\git')
+    const exact = record('0.46.0', 'local', 'C:\\Users\\x\\git\\proj')
+    for (const order of [[parent, exact], [exact, parent]]) {
+      const text = JSON.stringify({ plugins: { 'a@b': order } })
+      expect(parseInstalled(text, 'C:\\Users\\x\\git\\proj\\sub')?.[0]?.version).toBe('0.46.0')
+      expect(parseInstalled(text, 'C:\\Users\\x\\git\\sibling')?.[0]?.version).toBe('0.40.0')
+    }
   })
 
   it('the updater applies the same rule: a session in a subfolder of the project updates the project install', () => {

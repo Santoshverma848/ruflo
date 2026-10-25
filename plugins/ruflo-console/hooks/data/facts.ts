@@ -162,14 +162,22 @@ export type Installed = { id: string; name: string; marketplace: string; version
 
 /**
  * The install record that applies to a session in `cwd`: a project or local one whose `projectPath` is `cwd` or holds it (Windows paths compare
- * ignoring case and separator style), else the user-scope one, else the first. A plugin installed for several projects has one record each; taking
- * the first showed another project's version and install folder.
+ * ignoring case and separator style; the longest `projectPath` wins, so a record for the exact project beats one for a parent folder), else the
+ * user-scope one. A plugin installed for several projects has one record each; a record for another project never describes this one, so with
+ * none applying the result is null ("not installed here"). Without a `cwd` there is no project to judge and the first record stands in.
  */
 function entryFor(entries: unknown, cwd: string | undefined): Record<string, unknown> | null {
-  const list = (Array.isArray(entries) ? entries : [entries]).flatMap(entry => recordOf(entry) ?? [])
-  const applies = (entry: Record<string, unknown>): boolean => cwd !== undefined && typeof entry.projectPath === 'string' && insideOrSame(entry.projectPath, cwd)
+  const list: Record<string, unknown>[] = (Array.isArray(entries) ? entries : [entries]).flatMap(entry => recordOf(entry) ?? [])
 
-  return list.find(entry => (entry.scope === 'project' || entry.scope === 'local') && applies(entry)) ?? list.find(entry => entry.scope === 'user') ?? list[0] ?? null
+  if (cwd === undefined) {
+    return list.find(entry => entry.scope === 'user') ?? list[0] ?? null
+  }
+
+  const rootOf = (entry: Record<string, unknown>): string => (typeof entry.projectPath === 'string' && insideOrSame(entry.projectPath, cwd) ? entry.projectPath : '')
+  const here = list.filter(entry => (entry.scope === 'project' || entry.scope === 'local') && rootOf(entry) !== '')
+  const nearest = here.reduce<Record<string, unknown> | null>((best, entry) => (best === null || rootOf(entry).length > rootOf(best).length ? entry : best), null)
+
+  return nearest ?? list.find(entry => entry.scope === 'user') ?? null
 }
 
 /** `~/.claude/plugins/installed_plugins.json` (version 2): every installed plugin, `name@marketplace`. `cwd` picks the record of a plugin installed more than once. */

@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.49.3 — 2026-10-25
+- fix: the install record for a plugin installed more than once no longer comes from another project (#4496). With no record for this folder and no user-scope record the console now reports "not installed here" instead of showing the first record's version and install folder, and among records that apply the one with the longest `projectPath` wins, so a record for the exact project beats one for a parent folder.
+
 ## 0.49.2 — 2026-10-25
 - fix: Windows autopilot path guards and binary-planting hardening (#4491). Matches extended namespaces (`\\?\`), device paths (`\\.\`), drive-relative paths (`C:foo`), and UNC forward-slash shares; denies envelope edits under backslashes; rejects root drive envelope paths and `.bat`/`.cmd` targets; hardens against NTFS alternate data streams and parent traversals; and resolves `powershell.exe` and `where.exe` explicitly from System32.
 
