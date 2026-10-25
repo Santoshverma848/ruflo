@@ -7,6 +7,21 @@ import { candidate, MAX_BYTES, MAX_PENDING, MAX_PER_SESSION, MAX_PER_TURN, OFFER
 const RURE_TOOL = /__rure_analyze_binary$/
 
 /**
+ * Claude Code refuses a hooks module that registers one event twice WITHOUT a matcher (#4485), and the always-on modules already hold the
+ * bare `tool.call` and `turn.complete`. An optional module therefore registers with a match-all matcher on a field every such event carries
+ * (the same idiom as the session rollup), and its `session.start` work lives in the one handler in session.ts (`hasRure`).
+ */
+const ANY = /^[\s\S]*$/
+
+/**
+ * Whether a tool list holds a ruRE tool. Pure: Claude Code's loader follows `$` only inside the file that spells it, so the
+ * `$.tool.list()` call is in session.ts's single `session.start` handler (a second unmatched one is refused, #4485) and passes the list here.
+ */
+export function hasRure(tools: ReadonlyArray<{ name: string; mcp?: boolean }>): boolean {
+  return tools.some(tool => tool.mcp === true && RURE_TOOL.test(tool.name))
+}
+
+/**
  * The ruRE offer (ADR-498). Off unless the `rureOffer` option is on. When the model reads or writes a file ruRE can look inside (an
  * executable, a library, an Electron `.asar`, a CUDA `.cubin`), it adds ONE line beneath that turn's answer naming up to three such files
  * and how to inspect them without running them. It never runs ruRE, never denies or changes a tool call, never touches the transcript,
@@ -19,19 +34,7 @@ export function registerRureOffer(on: On, state: ModState) {
 
   offer.enabled = true
 
-  on('session.start', async ($, e, next) => {
-    const result = await next(e)
-
-    try {
-      offer.available = (await $.tool.list()).some(tool => tool.mcp && RURE_TOOL.test(tool.name))
-    } catch {
-      offer.available = false
-    }
-
-    return result
-  })
-
-  on('tool.call', async ($, e, next) => {
+  on('tool.call', { tool: ANY }, async ($, e, next) => {
     const result = await next(e)
 
     if (!offer.available || (result as { deny?: unknown } | undefined)?.deny !== undefined || !OFFER_TOOLS.has(e.tool)) return result
@@ -43,7 +46,7 @@ export function registerRureOffer(on: On, state: ModState) {
     return result
   })
 
-  on('turn.complete', async ($, e, next) => {
+  on('turn.complete', { turnId: ANY }, async ($, e, next) => {
     const result = await next(e)
 
     // Only the main loop's answer carries the line: a subagent's answer goes back to the model that asked for it.

@@ -152,6 +152,18 @@ function matches(matcher: Record<string, unknown> | undefined, e: Record<string,
 
 export type Core = (event: string, e: any) => any;
 
+/**
+ * Claude Code's hooks loader refuses a module that registers the same event twice WITHOUT a matcher ("on(\"session.start\") is registered
+ * twice without a matcher"), and then none of the mod's hooks run. The fake host used to accept it, which is how ruflo-mods 0.7.0 shipped
+ * broken (#4485). Mirror the rule so every mod test, and the all-options test, fails the same way.
+ */
+export function assertLoadable(regs: ReadonlyArray<{ event: string; matcher?: unknown }>): void {
+  const bare = new Map<string, number>();
+  for (const reg of regs) if (reg.matcher === undefined) bare.set(reg.event, (bare.get(reg.event) ?? 0) + 1);
+  const twice = [...bare].filter(([, count]) => count > 1).map(([event]) => event);
+  if (twice.length) throw new Error(`hooks module did not load: ${twice.map((event) => `on("${event}") is registered twice without a matcher`).join('; ')}`);
+}
+
 export function loadMod(register: (on: any, options: any) => unknown, world: World, options: Record<string, unknown> = {}) {
   const regs: Registration[] = [];
   const on = (event: string, a: unknown, b?: unknown) => {
@@ -165,6 +177,7 @@ export function loadMod(register: (on: any, options: any) => unknown, world: Wor
     };
   };
   register(on, options);
+  assertLoadable(regs);
   const $ = engineOf(world);
 
   async function dispatch(event: string, e: any, core: (e: any) => any): Promise<any> {
