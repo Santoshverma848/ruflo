@@ -3,10 +3,11 @@
  * host, drawn by the mod's own page bodies in the standalone pane, headless and with an injected terminal. Run with
  *   npx vitest run plugins/ruflo-console/tests/tui-session.spec.ts
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { removeTree } from './fixtures/rm-tree'
 
 import { depthOf, keyOf, NOT_A_TERMINAL_HINT, runTui, type TuiIO } from '../tui/run'
 import { openSession } from '../tui/session'
@@ -32,7 +33,7 @@ beforeAll(() => {
   // The same project with an escape sequence and a token where a swarm id and topology are read from disk (both files that name it).
   put(hostile, { ...RUFLO_FILES, '.swarm/state.json': JSON.stringify({ id: `swarm-\u001b]0;pwned\u0007-1`, topology: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789', status: 'running' }), '.claude-flow/swarm/swarm-state.json': JSON.stringify({ swarms: { 'swarm-1': { swarmId: `swarm-\u001b]0;pwned\u0007-1`, topology: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789', status: 'running', agents: [] } } }) })
 })
-afterAll(() => rmSync(root, { recursive: true, force: true }))
+afterAll(() => removeTree(root))
 
 function fakeIO(isTTY: boolean) {
   const out: string[] = []

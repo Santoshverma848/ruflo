@@ -4,10 +4,11 @@
  * and in words alone where there is no colour or no room. Run with
  *   npx vitest run plugins/ruflo-console/tests/tui-pictures.spec.ts
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { removeTree } from './fixtures/rm-tree'
 
 import { fpsOf, keyOf, runTui, type TuiIO } from '../tui/run'
 import { LOOKS, openSession } from '../tui/session'
@@ -26,7 +27,7 @@ beforeAll(() => {
     writeFileSync(join(project, path), body)
   }
 })
-afterAll(() => rmSync(root, { recursive: true, force: true }))
+afterAll(() => removeTree(root))
 
 const settle = (ms = 120) => new Promise(resolve => setTimeout(resolve, ms))
 /** Waits until `count()` stops changing for `ms` (a frame already in flight when something happened has landed), at most `limit` ms. */

@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { removeTree } from './fixtures/rm-tree'
 
 import { taskIdOf, windowsSearchArgv } from '../hooks/data/wf-control'
 
@@ -43,7 +44,7 @@ describe.skipIf(process.platform !== 'win32')('the Windows search, through a rea
   const folder = join(root, "o'brien $x & y; z")
 
   mkdirSync(folder)
-  afterAll(() => rmSync(root, { recursive: true, force: true }))
+  afterAll(() => removeTree(root))
 
   const file = join(folder, 's.jsonl')
   const filler = Array.from({ length: 20_000 }, (_unused, i) => JSON.stringify({ type: 'user', i, pad: 'x'.repeat(120) }))

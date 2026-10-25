@@ -3,10 +3,11 @@
  * Codex. Every send waits for a card that was drawn; a key is read by name and never reaches a frame; the reply's cost is the provider's.
  *   npx vitest run plugins/ruflo-console/tests/tui-ai-page.spec.ts
  */
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { removeTree } from './fixtures/rm-tree'
 
 import { widthOf } from '../tui/ansi'
 import { runTui, type TuiIO } from '../tui/run'
@@ -27,7 +28,7 @@ beforeAll(() => {
   mkdirSync(project, { recursive: true })
   mkdirSync(codexHome, { recursive: true })
 })
-afterAll(() => rmSync(root, { recursive: true, force: true }))
+afterAll(() => removeTree(root))
 beforeEach(() => void (process.env.OPENROUTER_API_KEY = KEY))
 afterEach(() => {
   delete process.env.OPENROUTER_API_KEY
