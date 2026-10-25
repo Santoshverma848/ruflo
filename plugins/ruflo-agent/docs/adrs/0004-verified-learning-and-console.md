@@ -153,6 +153,11 @@ three embedded fixture receipts with the declared memory 3.0.9 dependency;
 older desktop memory alpha.26 aborts during native initialization and is not
 qualified. See the [ruOS validation](../../../../docs/validation/managed-ruos-e2e.md).
 
+The actual console host path is qualified on Claude Code 2.1.287: installed
+mods/swarm/console load and candidate managed views pass real console tool
+assertions. The tested 2.1.283 host exposed no console tools even with the
+function-hook flag; plugin installation alone is not proof of registration.
+
 ### Frozen evaluation gate
 
 The heldout manifest declares 2 to 100 unique task hashes and 3 to 10 trials;

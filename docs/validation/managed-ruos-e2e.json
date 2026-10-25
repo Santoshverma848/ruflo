@@ -77,6 +77,29 @@
     "driverExitCode": 1,
     "passed": false
   },
+  "compatibleHostVerification": {
+    "hostVersion": "2.1.287",
+    "installedConsoleVersion": "0.48.0",
+    "candidateConsoleVersion": "0.49.0",
+    "modVersion": "0.7.0",
+    "swarmVersion": "0.3.7",
+    "installedPluginsEnabled": true,
+    "stableDriverExitCode": 0,
+    "candidateDriverExitCode": 0,
+    "candidateToolCalls": 2,
+    "candidateReportedCostUsd": 0.0389625,
+    "interactivePaneVisuallyConfirmed": true,
+    "syntheticManagedSnapshot": true,
+    "managedProviderCalls": 0,
+    "checks": {
+      "managedRun": true,
+      "providerUnverified": true,
+      "workersUnverified": true,
+      "acceptanceUnverified": true,
+      "budget": true
+    },
+    "passed": true
+  },
   "directProvider": {
     "tested": false,
     "reason": "No API key delivered to executor"
