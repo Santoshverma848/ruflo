@@ -22,6 +22,8 @@ import {
 interface LRUNode<T> {
   key: string;
   value: CachedEntry<T>;
+  /** Cached result of estimateSize(value.data), kept in sync on every write. */
+  size: number;
   prev: LRUNode<T> | null;
   next: LRUNode<T> | null;
 }
@@ -70,6 +72,18 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
 
   /**
    * Get a value from the cache
+   *
+   * KNOWN LIMITATION: the returned value is the live object held by the
+   * cache, not a copy. Mutating it in place (rather than calling `set()`
+   * with the updated value) desyncs memory accounting: an entry's
+   * accounted `size` is fixed at the last `set()`/overwrite and is no
+   * longer recomputed from the live object on delete/eviction, so
+   * `currentMemory`/`getStats().memoryUsage` can drift by whatever a
+   * direct mutation added or removed in serialized size (e.g. an
+   * in-place `accessCount++`). This is pre-existing in every caller that
+   * mutates a `get()` result in place rather than calling `set()`; it
+   * was previously self-correcting because delete/eviction re-stringified
+   * the current object on every removal instead of reusing a cached size.
    */
   get(key: string): T | null {
     const node = this.cache.get(key);
@@ -120,13 +134,16 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
     // Check if key already exists
     const existingNode = this.cache.get(key);
     if (existingNode) {
-      // Account for the old value before overwriting it.
-      this.currentMemory += entryMemory - this.estimateSize(existingNode.value.data);
+      // Account for the old value before overwriting it. The old size was
+      // already computed and cached on the node when it was last written —
+      // reuse it instead of re-stringifying the value being replaced.
+      this.currentMemory += entryMemory - existingNode.size;
       // Update existing entry
       existingNode.value.data = data;
       existingNode.value.cachedAt = now;
       existingNode.value.expiresAt = now + entryTtl;
       existingNode.value.lastAccessedAt = now;
+      existingNode.size = entryMemory;
 
       this.moveToFront(existingNode);
       if (this.config.maxMemory) {
@@ -165,6 +182,7 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
     const node: LRUNode<T> = {
       key,
       value: cachedEntry,
+      size: entryMemory,
       prev: null,
       next: null,
     };
@@ -189,7 +207,7 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
 
     this.removeNode(node);
     this.cache.delete(key);
-    this.currentMemory -= this.estimateSize(node.value.data);
+    this.currentMemory -= node.size;
 
     this.emit('cache:delete', { key });
     return true;
@@ -400,7 +418,7 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
     if (!this.tail) return;
 
     const evictedKey = this.tail.key;
-    const evictedSize = this.estimateSize(this.tail.value.data);
+    const evictedSize = this.tail.size;
 
     this.removeNode(this.tail);
     this.cache.delete(evictedKey);
