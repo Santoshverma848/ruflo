@@ -11,7 +11,7 @@ check('README namespace',read('README.md').includes('Namespace coordination'));
 check('ADR proposed',read('docs/adrs/0001-multitenant-service-boundary.md').includes('Status: Proposed'));
 check('six skills',readdirSync(new URL('skills/',root),{withFileTypes:true}).filter((entry)=>entry.isDirectory()).length===6);
 check('four agents',readdirSync(new URL('agents/',root)).filter((name)=>name.endsWith('.md')).length===4);
-check('four commands',readdirSync(new URL('commands/',root)).filter((name)=>name.endsWith('.md')).length===4);
+check('six commands',readdirSync(new URL('commands/',root)).filter((name)=>name.endsWith('.md')).length===6);
 const server=read('src/server.mjs');
 check('fourteen MCP tools',(server.match(/mcp\.tool\('/g)||[]).length+(server.match(/mcp\.registerTool\('/g)||[]).length===14);
 check('explicit annotation factories',server.includes('readOnlyHint: true')&&server.includes('readOnlyHint: false')&&server.includes('destructiveHint: false')&&server.includes('idempotentHint:')&&server.includes('openWorldHint: false'));

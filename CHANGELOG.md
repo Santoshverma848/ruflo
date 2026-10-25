@@ -5,6 +5,72 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.0] - 2026-10-25
+
+Minor release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.0. Adds four MCP tools for Anthropic Claude Managed Agents (`managed_agent_capabilities`, `managed_agent_control`, `managed_agent_learning`, `managed_agent_interrupt`). No leaf package changed, so no standalone publishes.
+
+### Added
+
+- **Managed cloud agents: dynamic workflows, controls and verified advisory learning** (`ruflo-agent` 0.4.0, `ruflo-workflows` 0.7.0, `ruflo-console` 0.49.0; ADR 0003 and 0004). Everything is opt-in. A cloud agent can run bounded dynamic workflows (`dynamicWorkflows: true` with a mandatory `budgetCents`, limited networking, optional `predefinedAgents`); provider completion is reported as `verification: "unverified"`. Managed sessions show up in the console's Workflows page with their budget, blockers and worker counts, with zero provider traffic from the panels. `managed_agent_control` inspects, interrupts or terminates one session only when the host sets `RUFLO_MANAGED_CONTROL=1` and lists the session in `RUFLO_MANAGED_CONTROL_SESSIONS`, after a fresh read of the provider's state. With `RUFLO_MANAGED_LEARNING=1` and a host-configured `RUFLO_MANAGED_VERIFIER_PUBLIC_KEY`, `managed_agent_learning` admits signed outcomes (unsigned ones stay quarantined), recommends a strategy and evaluates paired holdouts; nothing changes routing on its own.
+- User guide: a "Managed cloud agents" section in `docs/USERGUIDE.md`.
+
+### Fixed
+
+- `memory_search_unified` dropped an entry whenever the same key existed in two namespaces; it now deduplicates on namespace and key (#4470, thanks @kevin9327).
+- Before this release shipped, an independent review of the managed-agent change found and fixed: `managed_agent_interrupt` had no host policy gate (it now uses the `managed_agent_control` path, and `managed_agent_terminate` obeys the same allowlist, deleting only the session's own environment, once `RUFLO_MANAGED_CONTROL=1`); `managed_agent_prompt` could report the previous turn's answer as finished on a later poll; several valid base64 spellings of one verifier signature were stored as separate ledger records; and the console showed rescheduling, budget-stopped and action-blocked sessions as finished.
+
+### Notes
+
+- **Known limits (ADR 0004):** the verifier signs with a key in the same user account as the checks it runs, so run only host-authored checks, never ones an agent produced; evidence is only partly bound to what ran; a crashed process can leave a lock file that needs removing by hand; a session in an `error` state cannot be controlled. Live execution against the Anthropic Managed Agents beta has **not** been exercised (it needs an executor key), so treat the cloud runtime as unproven in production.
+- `ruflo-ai-team` 0.3.5 (#4475) also changed in this tree.
+- `RUFLO_MANAGED_AGENTS_BASE_URL` is an operator-only override of the API origin (an HTTPS origin, no credentials, path or redirects); it is never a tool argument.
+
+## [3.62.0] - 2026-10-24
+
+Minor release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.62.0. Adds one MCP tool (`rure_cuda_launch_plan`). No leaf package changed, so no standalone publishes.
+
+### Added
+
+- **ruRE: CUDA launch plan** (ruflo-rure 0.6.0, ADR-501). New read-only MCP tool `rure_cuda_launch_plan` turns what `rure_analyze_cuda` found into a plan for measuring: per architecture and kernel, how many blocks and warps fit on one multiprocessor at each block size, which resource sets the limit (registers, shared memory, warps, block slots, barriers), the best block sizes and flags. Eight architectures have a table (`sm_70` to `sm_120`); any other gets no figure rather than a guess. It still parses and never runs: `includeHarness` only returns the text of a small CUDA program for you to build and run yourself. The occupancy model matches NVIDIA's `cuda_occupancy.h` on 1.77 million combinations and the CUDA driver on five real GPUs (ADR-501, ADR-500).
+
+### Fixed
+
+- `rure_analyze_cuda` reported the wrong architecture (`sm_5`) for a standalone `.cubin` built with CUDA 12 for `sm_70` to `sm_90`; the SM number sits in a different byte depending on the cubin's OS ABI. Cubins inside a fatbin or host binary were not affected.
+- The worker daemon let a `maxConcurrent` or `workerTimeoutMs` saved in `daemon-state.json` override the same setting in `config.json`; an explicit value now wins (constructor, then config file, then saved state, then default) (#4462).
+- Cancelling a headless worker now settles its execution and escalates to SIGKILL when the child ignores SIGTERM; the fallback timer no longer keeps the host alive, and a timed-out child no longer gets a second SIGTERM (#4463).
+
+### Notes
+
+- Plugins in this tree that changed: `ruflo-rure` 0.6.0, `ruflo-ai-team` 0.3.4, `ruflo-browser` 0.3.7 (doctor path from other working directories), `ruflo-x-gateway` 0.10.2. The x.ruv.io gateway itself (0.9.1) is a separate deployment.
+- `@claude-flow/swarm` changes (#4456, #4457) are not a CLI dependency and are not part of this release.
+
+## [3.61.1] - 2026-10-24
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.61.1. No leaf package changed, so no standalone publishes.
+
+### Added
+
+- `ruflo-console` 0.48.0 (ADR-499): the ruRE page can read a folder outside the project that you allow. New plugin option `rureFolders` (`name=/absolute/folder` pairs); a sample then names it as `@name/sub/file`. Absolute paths, `..` and odd characters in a sample are still refused; the folder and every part below it must not be a link; and changing the option is an install-class write that always asks you first (Claude's console tools can only propose it at the full control level). ruRE still only parses. This is the version that `ruflo tui` ships, which is why it needs a CLI release.
+
+### Notes
+
+- CI: plugin pull requests now fail unless the plugin's `plugin.json` version rises when shipped files change (#4447).
+- `@claude-flow/plugins` (#4451, registry caches no longer re-run a surviving plugin's `register*` methods) is not a CLI dependency and is not part of this release.
+
+## [3.61.0] - 2026-10-23
+
+Minor release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.61.0. Adds one MCP tool (`rure_analyze_cuda`). No leaf package changed, so no standalone publishes.
+
+### Added
+
+- **ruRE: CUDA static analysis** (ruflo-rure 0.5.0, plugin ADR-0006). New read-only MCP tool `rure_analyze_cuda` reads the GPU code inside a CUDA fatbin, cubin or PTX file: fatbin entries (PTX or cubin, target architecture, LZ4/zstd compression), each kernel with register count, code size and constant/shared/local memory, and PTX version, target and kernel names. It parses only; nothing is executed, and strings taken from the file pass the AIDefence gate. Checked against real nvcc 12.8 and 13.0 output. Not included: SASS decoding, `cuobjdump` shell-out. zstd entries need Node 22.15+.
+- `ruflo-console` 0.47.0: a CUDA row on the ruRE page, DETECT routes for `.cubin`, `.fatbin` and `.ptx`, and a hint on a native binary that holds a CUDA fatbin (ADR-495..497). The ruRE page refuses a sample that is a symlink, wraps long lists, and shows Claude a structured `rure` block in `console_state`.
+- `ruflo-mods` 0.7.0: opt-in `rureOffer` (off by default, ADR-498) adds one line under an answer when the model touched a binary, library, `.asar` or CUDA file, saying ruRE can inspect it without running it. Offer only; the mods plugin is not part of the CLI tarball.
+
+### Fixed
+
+- Dependency audit: `zod` 4.6.7 in `ruflo-graph-intelligence` and `@claude-flow/browser` (GHSA-mrhx-c7xc-m3w5). Nested zod 3 copies stay under two time-boxed accepted findings that expire 2026-11-23 (#4442, #4444).
+
 ## [3.60.1] - 2026-10-23
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.60.1. No leaf package changed, so no standalone publishes.

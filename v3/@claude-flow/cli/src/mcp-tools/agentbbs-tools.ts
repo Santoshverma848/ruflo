@@ -480,14 +480,19 @@ export const agentbbsTools: MCPTool[] = [
       const all = readEnvelopes(logPath);
 
       let slice = all;
+      let resuming = false;
       if (sinceEnvelopeId) {
         const idx = all.findIndex(e => e.envelopeId === sinceEnvelopeId);
-        slice = idx >= 0 ? all.slice(idx + 1) : all;
+        resuming = idx >= 0;
+        slice = resuming ? all.slice(idx + 1) : all;
       }
       // Dedup by envelopeId before applying the limit — a relay replay or a
       // double-append must not surface the same envelope twice to a watcher.
       const deduped = dedupEnvelopes(slice);
-      const envelopes = deduped.slice(-limit);
+      // A watcher resuming after sinceEnvelopeId gets the oldest envelopes
+      // first, so passing the last returned id pages through the rest when
+      // hasMore is set. Without a cursor, it gets the most recent window.
+      const envelopes = resuming ? deduped.slice(0, limit) : deduped.slice(-limit);
       return {
         success: true,
         roomId,

@@ -2,7 +2,8 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
-## 0.47.2 — 2026-10-24
+## 0.49.1 — 2026-10-25
+- fix: the Plugin Catalog reads the marketplace clone on Windows. The clone's location is a drive path (`C:\Users\…\marketplaces\ruflo`), and the catalog refused anything not starting with `/`, so it said "the clone's marketplace.json is not readable" while the file was there. The catalog, each plugin's folder, and the plugins view's freshness row now use the shared path helpers (`paths.ts`).
 - fix: **forget history** (Events) and **forget saved views** (Workflows) work on Windows. They ran `rm -f`, which Windows does not have; there the files are emptied through the host file API (saved views as a valid empty document) and the result is verified by what the file holds. Linux and macOS are unchanged.
 - fix: ADR status changes on records with CRLF line endings (git autocrlf on Windows). A MADR record failed with "the front matter is not closed", and other formats got mixed endings; records are now edited as LF text and written back with their own endings.
 - fix: the standalone terminal (`ruflo tui`) draws in colour on Windows. It treated an unset `TERM` as "no terminal", but Windows Terminal, PowerShell and cmd leave `TERM` unset; only `TERM=dumb` or `NO_COLOR` turn colour off there.
@@ -22,8 +23,16 @@ Newest first. One `## <version> — <date>` heading per version, then `feat:`, `
 - chore: `views/pane` reads `menuView` at call time (a cycle through mission-control and model-tools left it undefined when a test loaded the menu first), and `tui-actions` waits for the outcome it checks instead of a fixed 1.2 s. The whole spec set passes on Windows.
 - chore: the real-disk POSIX write specs (modes, FIFOs) are skipped on Windows, which writes through the host file API; one `ruflo tui --plain` spec no longer needs a runnable fake codex there.
 
-## 0.47.1 — 2026-10-24
-- fix: the Plugin Catalog reads the marketplace clone on Windows. The clone's location is a drive path (`C:\Users\…\marketplaces\ruflo`), and the catalog refused anything not starting with `/`, so it said "the clone's marketplace.json is not readable" while the file was there. The catalog, each plugin's folder, and the plugins view's freshness row now use the shared path helpers (`paths.ts`).
+## 0.49.0 — 2026-10-24
+- feat: exact managed session controls in the model palette with existing confirmation and permission gates
+- fix: a rescheduling session shows as running, and a session stopped at its budget, waiting on a required action or holding an open tool request shows as active instead of finished
+- feat: first class managed sessions in Workflows with reported budgets, remote blockers and host checked controls
+- feat: advisory managed learning evidence and recommendations in Learning
+- fix: provider completion never becomes a verified correctness badge; local snapshot flags are not authority
+
+## 0.48.0 — 2026-10-24
+- feat: ruRE can read a folder outside the project that you allow (ADR-499). New option `rureFolders` (`name=/absolute/folder; name2=…`); a ruRE sample then names it as `@name/sub/file`. Changing the option is an install-class change that always waits for your Yes (Claude's console tools can only propose it at the full control level), so Claude can reach an outside folder only through a name you defined. A folder that is a link, a link anywhere below it, `..`, an absolute path typed as a sample, an unknown name, and a filesystem root are all refused; ruRE still only parses.
+- chore: the preflight of a ruRE row now receives the console's options (same line count in the runner).
 
 ## 0.47.0 — 2026-10-23
 - feat: a **CUDA** row on the ruRE page (ADR-497) for the new `rure_analyze_cuda` tool: for a CUDA program, a `.cubin`, a `.fatbin` or a `.ptx` it shows the fatbin entries (kind, target `sm_NN`, compression), each kernel with its register count, code size and constant/shared memory, and the PTX version, target and kernel names. Needs a ruflo CLI that has the tool (the release after 3.60.1); on an older one the row says to update, as the other ruRE rows do.
