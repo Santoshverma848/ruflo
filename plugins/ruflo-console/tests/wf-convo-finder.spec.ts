@@ -18,7 +18,7 @@ async function factsFor(home: string, hasCodex: boolean): Promise<{ finders: str
       finders.push(`${argv[0]} ${argv[1]}`)
 
       // Only the finder the platform has answers; the other "is not recognised".
-      const platformFinder = home.startsWith('/') ? 'which' : 'where'
+      const platformFinder = home.startsWith('/') ? 'which' : 'C:\\Windows\\System32\\where.exe'
 
       return found(argv[0] === platformFinder && hasCodex ? 0 : 127)
     },
@@ -35,11 +35,11 @@ async function factsFor(home: string, hasCodex: boolean): Promise<{ finders: str
 
 describe('finding codex for the Conversation board', () => {
   it('uses `where` on a Windows home (drive path) and finds codex', async () => {
-    expect(await factsFor('C:\\Users\\u', true)).toEqual({ finders: ['where codex'], hasCodex: true })
+    expect(await factsFor('C:\\Users\\u', true)).toEqual({ finders: ['C:\\Windows\\System32\\where.exe codex'], hasCodex: true })
   })
 
   it('uses `where` on a share home too, and says no codex when it is not there', async () => {
-    expect(await factsFor('\\\\srv\\home\\u', false)).toEqual({ finders: ['where codex'], hasCodex: false })
+    expect(await factsFor('\\\\srv\\home\\u', false)).toEqual({ finders: ['C:\\Windows\\System32\\where.exe codex'], hasCodex: false })
   })
 
   it('keeps `which` on a POSIX home', async () => {

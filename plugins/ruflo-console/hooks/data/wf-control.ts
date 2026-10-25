@@ -98,13 +98,14 @@ const utf8Base64 = (text: string): string => btoa(Array.from(new TextEncoder().e
  * parsed as PowerShell (a path with a space, a quote or a `$` is only data); the script itself has no double quote. Null for a run id that is
  * not one, a path with a NUL, or a host without TextEncoder/btoa.
  */
-export function windowsSearchArgv(path: string, runId: string): readonly string[] | null {
+export function windowsSearchArgv(path: string, runId: string, systemRoot = (typeof process !== 'undefined' && process.env?.SystemRoot) || 'C:\\Windows'): readonly string[] | null {
   if (!RUN_ID.test(runId) || path === '' || path.includes('\0') || typeof TextEncoder !== 'function' || typeof btoa !== 'function') return null
 
   const text = (value: string): string => `[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${utf8Base64(value)}'))`
   const script = `$p=${text(path)};$q=${text(taskPattern(runId))};Select-String -LiteralPath $p -Pattern $q -AllMatches | ForEach-Object { $_.Matches } | ForEach-Object { $_.Value }`
+  const psPath = `${systemRoot.replace(/[\\/]+$/, '')}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
 
-  return ['powershell', '-NoProfile', '-NonInteractive', '-Command', script]
+  return [psPath, '-NoProfile', '-NonInteractive', '-Command', script]
 }
 
 /** The session transcript that launched a run: the run's directory (`<session>/subagents/workflows/<run>`) without its tail, plus `.jsonl`. Null when the path is not a run path. */

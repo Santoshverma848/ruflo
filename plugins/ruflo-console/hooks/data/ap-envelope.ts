@@ -4,7 +4,7 @@
  * hash does not match its body is treated as tampered and the loop refuses to run on it. Hard denies are not part of the envelope: they
  * are a constant of this file, and an envelope that names one as allowed is rejected, never trimmed.
  */
-import { below, hasParentSegment, isAbsolutePath, isWindowsPath, samePath, trimTrailing } from './paths'
+import { below, hasParentSegment, isAbsolutePath, isWindowsPath, normalizePath, samePath, trimTrailing } from './paths'
 
 /** Classes of action an envelope can allow. Each task is classified (data/ap-guard.ts) into exactly one, or is parked. */
 export const TOOL_CLASSES = ['read', 'edit', 'test', 'git-local', 'git-branch', 'network', 'spawn', 'mcp'] as const
@@ -23,7 +23,7 @@ export const DENY_PATTERNS: readonly [HardDeny, RegExp][] = [
   ['secret-access', /\b(api[_ -]?key|secret|credential|password|private\s+key|\.env\b|gcloud\s+secrets|token)\b/i],
   // The second line is the Windows forms: cmd's `rmdir /s`, `del C:\`, `format C:`, PowerShell's `Remove-Item -Recurse`, and rm on a drive or a variable.
   ['delete-outside-worktree', /\b(rm\s+-rf?\s+(\/|~|\$HOME)|delete\s+(the\s+)?(home|root|\/)|drop\s+database|mkfs|dd\s+of=\/dev|(rmdir|rd)\s+\/s\b|(del|erase)\s+(\/[a-z]+\s+)*[A-Za-z]:[\\/]|format\s+[A-Za-z]:|Remove-Item\b[^\n]{0,120}-Recurse|rm\s+-rf?\s+([A-Za-z]:|%|\$env:))/i],
-  ['envelope-edit', /\b(autopilot\s+(envelope|scope|settings)|widen\s+(the\s+)?(envelope|scope)|raise\s+(the\s+)?(spend|budget)\s+(cap|ceiling)|grant\s+(itself|autopilot))|\.claude-flow\/(console\/autopilot|protector-mod)|autopilot\/(envelope|journal|kill)|protector-mod|\b(clear|remove|delete|rm|unset|touch)\b[^\n]{0,40}\bkill\s*(flag|switch|file)\b/i],
+  ['envelope-edit', /\b(autopilot\s+(envelope|scope|settings)|widen\s+(the\s+)?(envelope|scope)|raise\s+(the\s+)?(spend|budget)\s+(cap|ceiling)|grant\s+(itself|autopilot))|\.claude-flow[\\/](console[\\/]autopilot|protector-mod)|autopilot[\\/](envelope|journal|kill)|protector-mod|\b(clear|remove|delete|rm|unset|touch)\b[^\n]{0,40}\bkill\s*(flag|switch|file)\b/i],
 ]
 
 /** Folders the autopilot's own steps may never be pointed at: its envelope, journal and kill flag, and Project Anatole's status. A task or envelope that names one is refused, not trimmed. */
@@ -45,8 +45,18 @@ const hasCmdSubstitution = (part: string): boolean => /[`\n]|\$\(|;|&&|\|\||\|/.
 
 /** Why a verify argv is refused, or null. The program is its basename; a shell metacharacter in any part, a banned program or a hard-deny word refuses it. */
 export function verifyProblem(argv: readonly string[]): string | null {
-  // The basename under either separator, without a Windows executable suffix: `C:\Windows\System32\cmd.exe` is `cmd`, `bash.exe` is `bash`.
-  const program = (argv[0] ?? '').split(/[\\/]/).at(-1)?.toLowerCase().replace(/\.(exe|com|cmd|bat|ps1)$/, '') ?? ''
+  const rawTarget = (argv[0] ?? '').split(/[\\/]/).at(-1)?.toLowerCase() ?? ''
+
+  // Refuse batch scripts directly: on Windows they invoke cmd.exe which executes shell metacharacters (&, %, ^, etc.)
+  if (/\.(bat|cmd)$/i.test(rawTarget)) {
+    return `"${rawTarget.slice(0, 20)}" is a batch script and runs through cmd; give a binary or executable program instead`
+  }
+
+  // Strip Windows executable suffixes repeatedly: cmd.exe.exe -> cmd.exe -> cmd
+  let program = rawTarget
+  while (/\.(exe|com|cmd|bat|ps1)$/i.test(program)) {
+    program = program.replace(/\.(exe|com|cmd|bat|ps1)$/i, '')
+  }
 
   if (VERIFY_BANNED.has(program) || WINDOWS_BANNED.has(program)) return `"${program.slice(0, 20)}" is a shell, a wrapper or a destructive or network tool and cannot be a verify command`
   if (argv.some(hasCmdSubstitution)) return 'a verify part holds a shell metacharacter (; | & ` $( newline): give a program and its arguments only'
@@ -126,7 +136,10 @@ export function validateEnvelope(raw: unknown): Checked {
   if (paths === null || paths.length === 0) errors.push('paths: at least one absolute folder')
 
   for (const path of paths ?? []) {
-    if (!isAbsolutePath(path) || path === '/' || /^[A-Za-z]:[\\/]?$/.test(path) || path.length > 300 || BAD_CHARS.test(path) || hasParentSegment(path) || (path.includes('\\') && !isWindowsPath(path))) errors.push(`paths: "${path.slice(0, 40)}" is not an absolute folder below the root with no ..`)
+    const norm = trimTrailing(normalizePath(path))
+    const isDriveRoot = /^[A-Za-z]:[\\/]*$/.test(norm) || /^[A-Za-z]:$/.test(norm)
+    const hasNamespace = path.startsWith('\\\\?\\') || path.startsWith('\\\\.\\') || path.startsWith('//?/') || path.startsWith('//./')
+    if (!isAbsolutePath(path) || hasNamespace || norm === '/' || norm === '' || isDriveRoot || path.length > 300 || BAD_CHARS.test(path) || hasParentSegment(path) || (path.includes('\\') && !isWindowsPath(path))) errors.push(`paths: "${path.slice(0, 40)}" is not an absolute folder below the root with no ..`)
     else if (isProtectedPath(path)) errors.push(`paths: "${path.slice(0, 40)}" is the autopilot's or Project Anatole's own folder: steps are never pointed at it`)
   }
 
@@ -342,7 +355,7 @@ export function narrowed(prev: Envelope, next: Envelope): string[] {
 }
 
 /** A path is inside the envelope when it is one of its folders or below one (compared at a folder boundary, so /a/bc is not inside /a/b). Windows paths compare ignoring case and separator style, so `C:\work\app\file.ts` is inside envelope path `C:\work\app`. */
-export const pathAllowed = (envelope: Envelope, path: string): boolean => !hasParentSegment(path) && !isProtectedPath(path) && envelope.paths.some(root => samePath(root, path) || below(root, path) !== null)
+export const pathAllowed = (envelope: Envelope, path: string): boolean => !hasParentSegment(path) && !isProtectedPath(path) && !path.startsWith('\\\\?\\') && !path.startsWith('\\\\.\\') && isAbsolutePath(path) && envelope.paths.some(root => samePath(root, path) || below(root, path) !== null)
 
 export const hostAllowed = (envelope: Envelope, host: string): boolean => envelope.network.includes(host.toLowerCase())
 

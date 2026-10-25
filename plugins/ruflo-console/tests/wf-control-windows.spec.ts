@@ -14,7 +14,8 @@ describe('windowsSearchArgv', () => {
   it('is a PowerShell command whose script has no double quote, and carries the path and the pattern only as base64', () => {
     const argv = windowsSearchArgv('C:\\Users\\John Smith\\.claude\\projects\\a$b\'c;d&e\\s.jsonl', 'wf_abc12345') as readonly string[]
 
-    expect(argv.slice(0, 4)).toEqual(['powershell', '-NoProfile', '-NonInteractive', '-Command'])
+    expect(argv[0]).toMatch(/System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i)
+    expect(argv.slice(1, 4)).toEqual(['-NoProfile', '-NonInteractive', '-Command'])
     expect(argv).toHaveLength(5)
     expect(argv[4]).not.toContain('"')
     expect(argv[4]).not.toContain('John Smith')

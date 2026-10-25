@@ -52,8 +52,8 @@ describe('validateEnvelope on Windows paths', () => {
     if (result.ok) expect(result.envelope.paths).toEqual(['\\\\server\\share\\app'])
   })
 
-  it('still refuses the bare drive root in either separator', () => {
-    for (const bad of ['C:', 'C:\\', 'C:/']) {
+  it('still refuses the bare drive root in either separator and with trailing slash, dot or device prefix', () => {
+    for (const bad of ['C:', 'C:\\', 'C:/', 'C:\\\\', 'C:\\.', '\\\\?\\C:\\', '\\\\.\\C:\\']) {
       const result = validateEnvelope(envWith([bad]))
 
       expect(result.ok).toBe(false)

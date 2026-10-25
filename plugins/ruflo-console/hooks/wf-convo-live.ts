@@ -81,8 +81,11 @@ export async function refreshFacts(state: State, nowMs: number): Promise<void> {
 
   if (live.home !== null) live.peers = peersOf(await host.fs.read(`${live.home}/.claude/federation/peers.json`).then(text => (text.length > 200_000 ? null : text), () => null))
 
-  // `where` is Windows' `which`; the home folder tells the two apart (a drive-lettered or share path is a Windows one).
-  const finder = live.home !== null && isWindowsPath(live.home) ? 'where' : 'which'
+  // `where` is Windows' `which`; call System32\where.exe to prevent binary-planting from the current directory
+  const systemRoot = (typeof process !== 'undefined' && process.env?.SystemRoot) || 'C:\\Windows'
+  const finder = live.home !== null && isWindowsPath(live.home)
+    ? `${systemRoot.replace(/[\\/]+$/, '')}\\System32\\where.exe`
+    : 'which'
   const found = await host.run([finder, 'codex'], 3000).catch(() => undefined)
 
   live.hasCodex = found !== undefined && found.exitCode === 0

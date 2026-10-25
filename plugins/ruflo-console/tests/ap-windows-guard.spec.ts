@@ -19,13 +19,17 @@ describe('a task that names a Windows path is checked against the envelope folde
     expect(pathsOf('review "D:\\data\\x.csv"')).toContain('D:\\data\\x.csv')
     expect(pathsOf('wipe C:\\')).toContain('C:\\')
     expect(pathsOf('copy to \\\\srv\\share\\out')).toContain('\\\\srv\\share\\out')
+    expect(pathsOf('review //srv/share/out')).toContain('//srv/share/out')
+    expect(pathsOf('edit C:\\Program Files\\app\\config.json')).toContain('C:\\Program Files\\app\\config.json')
+    expect(pathsOf('review \\\\?\\C:\\Windows\\System32\\cmd.exe')).toContain('\\\\?\\C:\\Windows\\System32\\cmd.exe')
   })
 
-  it('finds a parent, home or variable path written the Windows way', () => {
+  it('finds a parent, home, drive-relative or variable path written the Windows way', () => {
     expect(pathsOf('read ..\\..\\secrets.txt')).toContain('..\\..\\secrets.txt')
     expect(pathsOf('review ~\\notes.md')).toContain('~\\notes.md')
     expect(pathsOf('review %USERPROFILE%\\Documents\\x')).toContain('%USERPROFILE%\\Documents\\x')
     expect(pathsOf('review $env:USERPROFILE\\Documents')).toContain('$env:USERPROFILE\\Documents')
+    expect(pathsOf('edit C:foo\\bar.txt')).toContain('C:foo\\bar.txt')
   })
 
   it('leaves the POSIX reading exactly as it was', () => {
@@ -41,6 +45,10 @@ describe('a task that names a Windows path is checked against the envelope folde
     expect(pathAllowed(env, '..\\..\\secrets.txt')).toBe(false)
     expect(pathAllowed(env, '%USERPROFILE%\\Documents')).toBe(false)
     expect(pathAllowed(env, 'C:\\proj\\..\\Windows')).toBe(false)
+    expect(pathAllowed(env, '\\\\?\\C:\\proj\\src\\a.ts')).toBe(false)
+    expect(pathAllowed(env, 'C:foo\\bar.txt')).toBe(false)
+    expect(pathAllowed(env, 'C:\\proj\\file.txt:stream:$DATA')).toBe(false)
+    expect(pathAllowed(env, 'C:\\proj\\.. \\Windows')).toBe(false)
   })
 })
 
@@ -59,14 +67,27 @@ describe('the destructive-command deny covers the Windows forms', () => {
 })
 
 describe('a verify command cannot be a Windows shell or a destructive Windows tool', () => {
-  it('refuses a program by its basename under either separator and without .exe', () => {
-    for (const argv of [['C:\\Windows\\System32\\cmd.exe', '/c', 'dir'], ['cmd', '/c', 'dir'], ['powershell', '-Command', 'x'], ['pwsh.exe', '-c', 'x'], ['bash.exe', '-c', 'x'], ['C:/Program Files/Git/bin/bash.exe', '-c', 'x'], ['taskkill', '/f', '/im', 'node.exe'], ['wsl', 'ls'], ['reg', 'delete', 'HKCU\\x']]) {
-      expect(verifyProblem(argv), argv.join(' ')).toMatch(/cannot be a verify command/)
+  it('refuses a program by its basename under either separator, batch files and without .exe', () => {
+    for (const argv of [
+      ['C:\\Windows\\System32\\cmd.exe', '/c', 'dir'],
+      ['cmd', '/c', 'dir'],
+      ['cmd.exe.exe', '/c', 'dir'],
+      ['powershell', '-Command', 'x'],
+      ['pwsh.exe', '-c', 'x'],
+      ['bash.exe', '-c', 'x'],
+      ['C:/Program Files/Git/bin/bash.exe', '-c', 'x'],
+      ['taskkill', '/f', '/im', 'node.exe'],
+      ['wsl', 'ls'],
+      ['reg', 'delete', 'HKCU\\x'],
+      ['pnpm.cmd', 'test'],
+      ['foo.bat', 'run'],
+    ]) {
+      expect(verifyProblem(argv), argv.join(' ')).toMatch(/cannot be a verify command|batch script/)
     }
   })
 
   it('still accepts the programs a verify command is for, on either platform', () => {
-    for (const argv of [['node', 'a.js'], ['C:\\Program Files\\nodejs\\node.exe', 'a.js'], ['pnpm.cmd', 'test'], ['npx', 'vitest', 'run'], ['/usr/bin/git', 'status']]) {
+    for (const argv of [['node', 'a.js'], ['C:\\Program Files\\nodejs\\node.exe', 'a.js'], ['pnpm', 'test'], ['npx', 'vitest', 'run'], ['/usr/bin/git', 'status']]) {
       expect(verifyProblem(argv), argv.join(' ')).toBeNull()
     }
   })
@@ -74,5 +95,19 @@ describe('a verify command cannot be a Windows shell or a destructive Windows to
   it('keeps refusing the POSIX shells and metacharacters', () => {
     expect(verifyProblem(['/usr/bin/bash', '-c', 'x'])).toMatch(/cannot be a verify command/)
     expect(verifyProblem(['npm', 'test', ';', 'x'])).toMatch(/shell metacharacter/)
+  })
+})
+
+describe('the envelope-edit deny pattern covers Windows paths', () => {
+  it('denies envelope and kill editing under both / and \\', () => {
+    for (const task of [
+      'edit .claude-flow/console/autopilot/envelope.json',
+      'edit .claude-flow\\console\\autopilot\\envelope.json',
+      'touch autopilot/kill',
+      'touch autopilot\\kill',
+      'rm .claude-flow\\protector-mod',
+    ]) {
+      expect(denyOf(task), task).toBe('envelope-edit')
+    }
   })
 })

@@ -44,8 +44,24 @@ export function samePath(a: string, b: string): boolean {
   return a === b
 }
 
-/** True when the path has a `..` segment (either separator for a Windows path). Callers refuse it themselves. */
-export const hasParentSegment = (p: string): boolean => (isWindowsPath(p) ? p.split(/[\\/]/) : p.split('/')).includes('..')
+/** True when the path has a `..` segment (either separator for a Windows path), an NTFS alternate data stream (`:`), or segments resolving to parent traversal. */
+export function hasParentSegment(p: string): boolean {
+  if (isWindowsPath(p)) {
+    // Reject NTFS alternate data streams: colon after the drive prefix (e.g. C:\foo:stream:$DATA)
+    const afterDrive = p.replace(/^[A-Za-z]:/, '')
+    if (afterDrive.includes(':')) return true
+
+    const segments = p.split(/[\\/]/)
+    return segments.some(seg => {
+      if (seg === '..') return true
+      const trimmed = seg.replace(/[. ]+$/, '')
+      return trimmed === '..' || /^\.{2,}[. ]*$/.test(seg)
+    })
+  }
+
+  const segments = p.split('/')
+  return segments.some(seg => seg === '..' || /^\.{2,}[. ]*$/.test(seg))
+}
 
 /**
  * The path with empty and `.` segments and a trailing separator dropped. A POSIX path comes back as `/a/b`; a Windows path keeps the
