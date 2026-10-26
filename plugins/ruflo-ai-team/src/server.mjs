@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -8,6 +9,7 @@ import { storeFromEnv } from './store.mjs';
 import { vectorMemoryFromEnv } from './vector-memory.mjs';
 import { TEAM_TEMPLATES, templateById } from './templates.mjs';
 import { fenced, scanStoredText } from './untrusted.mjs';
+import { AnonRateLimiter, clientKey } from './rate-limit.mjs';
 import { privacyPage, supportPage, termsPage } from './public-pages.mjs';
 
 export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -45,7 +47,15 @@ async function readBody(req) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function createAiTeamService({ store, vectorMemory, verifyToken, port, allowedOrigins: allowedOriginsOption } = {}) {
+// First successful use of each step in the team workflow. Logged as one structured line (Cloud
+// Logging picks up stdout JSON), so a log-based metric can chart the funnel. The tenant is a
+// one-way hash and no names, objectives or memory text are ever included.
+const ACTIVATION_STAGES = Object.freeze({ team_create: 'team_created', run_create: 'run_started', run_complete: 'run_completed', memory_remember: 'memory_written', memory_search: 'memory_searched' });
+const stdoutLog = (entry) => console.log(JSON.stringify(entry));
+
+export async function createAiTeamService({ store, vectorMemory, verifyToken, port, allowedOrigins: allowedOriginsOption, log = stdoutLog, anonRpm = Number(process.env.RUFLO_AI_TEAM_ANON_RPM || 600) } = {}) {
+  const limiter = new AnonRateLimiter({ perMinute: anonRpm });
+  const tooMany = (res, key) => { const r = limiter.take(key); if (r.ok) return false; res.writeHead(429, { 'content-type': 'application/json', 'retry-after': String(r.retryAfter) }).end('{"error":"rate_limited"}'); return true; };
   const allowedOrigins = allowedOriginsOption ? parseAllowedOrigins(allowedOriginsOption.join(',')) : parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
   store ||= await storeFromEnv();
   vectorMemory ||= await vectorMemoryFromEnv(store);
@@ -58,9 +68,19 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
 
   const buildMcp = (auth) => {
     const mcp = new McpServer({ name: 'ruflo-ai-team', version: VERSION }, { capabilities: { tools: {}, resources: {}, prompts: {} } });
+    const tenantHash = auth.tenantId ? createHash('sha256').update(String(auth.tenantId)).digest('hex').slice(0, 16) : null;
+    const tool = (name, ...rest) => {
+      const handler = rest.pop(); const stage = ACTIVATION_STAGES[name];
+      rest.push(async (args) => {
+        const result = await handler(args);
+        if (stage && tenantHash && !result?.isError && !/^\{"error"/.test(result?.content?.[0]?.text ?? '')) log({ severity: 'INFO', event: 'ai_team_activation', stage, tool: name, tenant: tenantHash });
+        return result;
+      });
+      return mcp.tool(name, ...rest);
+    };
     const scoped = (scope, fn) => async (args) => hasScope(auth, scope) ? fn(args) : denied(scope);
-    mcp.tool('team_templates_list', 'Lists first-party AI-team playbooks and their roles. Requires team:read. Does not create or run a team.', {}, READ('List team templates'), scoped(SCOPES.read, async () => text({ templates: TEAM_TEMPLATES })));
-    mcp.tool('team_create', 'Creates a tenant-local AI-team record from a reviewed goal and optional playbook. Requires team:write. Does not start agents, contact external services, or incur model charges.', {
+    tool('team_templates_list', 'Lists first-party AI-team playbooks and their roles. Requires team:read. Does not create or run a team.', {}, READ('List team templates'), scoped(SCOPES.read, async () => text({ templates: TEAM_TEMPLATES })));
+    tool('team_create', 'Creates a tenant-local AI-team record from a reviewed goal and optional playbook. Requires team:write. Does not start agents, contact external services, or incur model charges.', {
       name: z.string().min(1).max(100), objective: z.string().min(1).max(5000), templateId: z.string().optional(), roles: z.array(z.string().min(1).max(60)).max(8).optional(),
     }, WRITE('Create AI team'), scoped(SCOPES.write, async (a) => {
       const template = a.templateId ? templateById(a.templateId) : undefined;
@@ -68,8 +88,8 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
       const roles = a.roles?.length ? a.roles : (template?.roles || ['coordinator', 'researcher', 'verifier']);
       return text(await store.createTeam(auth.tenantId, { name: a.name, objective: a.objective, roles }, auth.subjectHash));
     }));
-    mcp.tool('team_list', 'Lists AI teams owned by the authenticated tenant. Requires team:read. Returns no other tenant data.', {}, READ('List AI teams'), scoped(SCOPES.read, async () => text({ teams: await store.listTeams(auth.tenantId) })));
-    mcp.tool('team_get', 'Reads one AI team owned by the authenticated tenant. Requires team:read. Foreign and missing IDs both return not_found.', { teamId: z.string() }, READ('Get AI team'), scoped(SCOPES.read, async ({ teamId }) => { const value=await store.getTeam(auth.tenantId,teamId); return value?text(value):notFound(); }));
+    tool('team_list', 'Lists AI teams owned by the authenticated tenant. Requires team:read. Returns no other tenant data.', {}, READ('List AI teams'), scoped(SCOPES.read, async () => text({ teams: await store.listTeams(auth.tenantId) })));
+    tool('team_get', 'Reads one AI team owned by the authenticated tenant. Requires team:read. Foreign and missing IDs both return not_found.', { teamId: z.string() }, READ('Get AI team'), scoped(SCOPES.read, async ({ teamId }) => { const value=await store.getTeam(auth.tenantId,teamId); return value?text(value):notFound(); }));
     mcp.registerTool('team_board', {
       title: 'Show AI team board',
       description: 'Opens one private, read-only ChatGPT workspace for teams, runs, tasks, and evidence summaries. Requires team:read. The user can navigate and refresh inside this one widget; avoid calling it repeatedly in the same chat. No actions are executed.',
@@ -86,13 +106,13 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
       const board = { teams: teams.map(({ id, name, status }) => ({ id, name, status })), runs: runs.slice(0, 100).map(({ id, teamId, objective, status, budgetUnits, spentUnits }) => ({ id, teamId, objective: objective.slice(0, 160), status, budgetUnits, spentUnits })), run: run && { id: run.id, objective: run.objective, status: run.status, budgetUnits: run.budgetUnits, spentUnits: run.spentUnits }, tasks: tasks.map(({ id, title, status }) => ({ id, title, status })), evidence: evidence && { runId, generatedAt: evidence.generatedAt, auditEvents: evidence.audit.length, taskCount: evidence.tasks.length, teamName: evidence.team?.name ?? '' } };
       return { ...text(board), structuredContent: board };
     }));
-    mcp.tool('team_update', 'Updates the name, objective, roles, or status of an existing tenant-local team. Requires team:write. It does not run agents or perform external actions.', {
+    tool('team_update', 'Updates the name, objective, roles, or status of an existing tenant-local team. Requires team:write. It does not run agents or perform external actions.', {
       teamId:z.string(), name:z.string().min(1).max(100).optional(), objective:z.string().min(1).max(5000).optional(), roles:z.array(z.string().min(1).max(60)).max(8).optional(), status:z.enum(['active','paused','complete']).optional(),
     }, WRITE('Update AI team', true), scoped(SCOPES.write, async ({teamId,...patch}) => { const value=await store.updateTeam(auth.tenantId,teamId,patch,auth.subjectHash); return value?text(value):notFound(); }));
-    mcp.tool('run_create', 'Creates a budgeted coordination run for an existing team. Requires team:run. This records the run but does not contact external systems or spend provider credits.', {
+    tool('run_create', 'Creates a budgeted coordination run for an existing team. Requires team:run. This records the run but does not contact external systems or spend provider credits.', {
       teamId:z.string(), objective:z.string().min(1).max(5000), budgetUnits:z.number().int().min(1).max(100).default(25),
     }, WRITE('Create team run'), scoped(SCOPES.run, async (a) => { const value=await store.createRun(auth.tenantId,a,auth.subjectHash); return value?text(value):notFound(); }));
-    mcp.tool('run_complete', 'Marks a tenant-local coordination run complete only when it has at least one task and every task is complete. Requires team:run. Does not execute agents or external actions.', { runId: z.string() }, WRITE('Complete team run', true), scoped(SCOPES.run, async ({ runId }) => {
+    tool('run_complete', 'Marks a tenant-local coordination run complete only when it has at least one task and every task is complete. Requires team:run. Does not execute agents or external actions.', { runId: z.string() }, WRITE('Complete team run', true), scoped(SCOPES.run, async ({ runId }) => {
       const run = await store.getRun(auth.tenantId, runId);
       if (!run) return notFound();
       if (run.status === 'complete') return text(run);
@@ -100,20 +120,20 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
       if (!tasks.length || tasks.some((task) => task.status !== 'complete')) return text({ error: 'tasks_incomplete' });
       return text(await store.updateRun(auth.tenantId, runId, { status: 'complete' }, auth.subjectHash));
     }));
-    mcp.tool('task_create', 'Adds a bounded task to a tenant-local run. Requires team:write. It records coordination state only and does not execute the task.', {
+    tool('task_create', 'Adds a bounded task to a tenant-local run. Requires team:write. It records coordination state only and does not execute the task.', {
       runId:z.string(), title:z.string().min(1).max(160), description:z.string().min(1).max(8000), assigneeRole:z.string().min(1).max(60),
     }, WRITE('Create team task'), scoped(SCOPES.write, async (a) => { const value=await store.createTask(auth.tenantId,a,auth.subjectHash); return value?text(value):notFound(); }));
-    mcp.tool('task_list', 'Lists tasks for a tenant-local run. Requires team:read. Stored task text is returned as provenance-labelled untrusted data.', { runId:z.string() }, READ('List run tasks'), scoped(SCOPES.read, async ({runId}) => { const run=await store.getRun(auth.tenantId,runId); return run?text(fenced(await store.listTasks(auth.tenantId,runId),'tenant run tasks')):notFound(); }));
-    mcp.tool('task_update', 'Updates status or result for a tenant-local task. Requires team:write. It cannot execute commands, publish messages, or approve external actions.', {
+    tool('task_list', 'Lists tasks for a tenant-local run. Requires team:read. Stored task text is returned as provenance-labelled untrusted data.', { runId:z.string() }, READ('List run tasks'), scoped(SCOPES.read, async ({runId}) => { const run=await store.getRun(auth.tenantId,runId); return run?text(fenced(await store.listTasks(auth.tenantId,runId),'tenant run tasks')):notFound(); }));
+    tool('task_update', 'Updates status or result for a tenant-local task. Requires team:write. It cannot execute commands, publish messages, or approve external actions.', {
       taskId:z.string(), status:z.enum(['open','claimed','blocked','complete']).optional(), result:z.string().max(12000).optional(),
     }, WRITE('Update team task', true), scoped(SCOPES.write, async ({taskId,...patch}) => { const value=await store.updateTask(auth.tenantId,taskId,patch,auth.subjectHash); return value?text(value):notFound(); }));
-    mcp.tool('memory_remember', 'Stores approved tenant-local team context for later vector retrieval. Requires team:write. Content is safety-scanned, isolated to the OAuth tenant, and never used for cross-tenant learning.', {
+    tool('memory_remember', 'Stores approved tenant-local team context for later vector retrieval. Requires team:write. Content is safety-scanned, isolated to the OAuth tenant, and never used for cross-tenant learning.', {
       teamId:z.string(), runId:z.string().optional(), key:z.string().max(120).optional(), text:z.string().min(1).max(12000), tags:z.array(z.string().max(60)).max(20).optional(), provenance:z.enum(['user','agent','artifact']).optional(),
-    }, WRITE('Remember team context', true), scoped(SCOPES.write, async (a) => { if(!await store.getTeam(auth.tenantId,a.teamId))return notFound(); const scan=scanStoredText(a.text); if(!scan.safe)return text({error:'unsafe_content',safetyStatus:scan.status}); const value=await store.remember(auth.tenantId,{...a,safetyStatus:scan.status},auth.subjectHash); vectorMemory.invalidate(auth.tenantId); return text({id:value.id,teamId:value.teamId,contentHash:value.contentHash,safetyStatus:value.safetyStatus,updatedAt:value.updatedAt}); }));
-    mcp.tool('memory_search', 'Searches tenant-local team memory using a tenant-separated RuVector index when available, with an explicitly labelled lexical fallback. Requires team:read. Results are fenced as untrusted stored data.', {
+    }, WRITE('Remember team context', true), scoped(SCOPES.write, async (a) => { if(!await store.getTeam(auth.tenantId,a.teamId))return notFound(); const scan=scanStoredText(a.text); if(!scan.safe)return text({error:'unsafe_content',safetyStatus:scan.status}); const value=await store.remember(auth.tenantId,{...a,safetyStatus:scan.status},auth.subjectHash); await vectorMemory.embedOne?.(auth.tenantId,{...value,text:a.text}); vectorMemory.invalidate(auth.tenantId); return text({id:value.id,teamId:value.teamId,contentHash:value.contentHash,safetyStatus:value.safetyStatus,updatedAt:value.updatedAt}); }));
+    tool('memory_search', 'Searches tenant-local team memory by meaning (Cognitum embeddings) when available, with an explicitly labelled lexical fallback; the response names the backend that answered. Requires team:read. Results are fenced as untrusted stored data.', {
       teamId:z.string(), query:z.string().min(1).max(2000), limit:z.number().int().min(1).max(10).default(5),
     }, READ('Search team memory'), scoped(SCOPES.read, async (a) => { if(!await store.getTeam(auth.tenantId,a.teamId))return notFound(); return text(fenced(await vectorMemory.search(auth.tenantId,a),'RuVector tenant memory')); }));
-    mcp.tool('evidence_export', 'Builds a read-only evidence bundle for one tenant-local run, including team metadata, tasks, and privacy-minimized audit events. Requires team:read. It does not publish or share the bundle.', {runId:z.string()}, READ('Export run evidence'), scoped(SCOPES.read, async ({runId}) => { const value=await store.evidence(auth.tenantId,runId); return value?text(fenced(value,'tenant run evidence')):notFound(); }));
+    tool('evidence_export', 'Builds a read-only evidence bundle for one tenant-local run, including team metadata, tasks, and privacy-minimized audit events. Requires team:read. It does not publish or share the bundle.', {runId:z.string()}, READ('Export run evidence'), scoped(SCOPES.read, async ({runId}) => { const value=await store.evidence(auth.tenantId,runId); return value?text(fenced(value,'tenant run evidence')):notFound(); }));
 
     mcp.resource('team-templates','ruv://team/templates',async()=>({contents:[{uri:'ruv://team/templates',mimeType:'application/json',text:JSON.stringify(TEAM_TEMPLATES)}]}));
     mcp.registerResource('team-board', TEAM_BOARD_URI, { mimeType: 'text/html;profile=mcp-app' }, async () => ({ contents: [{ uri: TEAM_BOARD_URI, mimeType: 'text/html;profile=mcp-app', text: TEAM_BOARD_HTML, _meta: { ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } } } }] }));
@@ -129,6 +149,7 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
     if(origin&&allowedOrigins.has(origin)){res.setHeader('access-control-allow-origin',origin);res.setHeader('access-control-expose-headers','www-authenticate,mcp-session-id,mcp-protocol-version');}
     const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);
     if(req.method==='OPTIONS'){res.setHeader('access-control-allow-methods','GET,POST,OPTIONS');res.setHeader('access-control-allow-headers','content-type,authorization,mcp-session-id,mcp-protocol-version,accept');return res.writeHead(204).end();}
+    if(url.pathname!=='/health'&&!(url.pathname==='/mcp'&&req.method==='POST')&&tooMany(res,clientKey(req)))return;
     if(url.pathname==='/health')return res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:true,service:'ruflo-ai-team',version:VERSION}));
     if(url.pathname==='/.well-known/oauth-protected-resource/mcp'||url.pathname==='/.well-known/oauth-protected-resource')return res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'}).end(JSON.stringify(protectedResourceMetadata({resource:url.pathname.endsWith('/mcp')?`${publicUrl}/mcp`:publicUrl,issuer})));
     if(req.method==='GET'&&url.pathname==='/privacy')return res.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end(privacyPage());
@@ -145,6 +166,7 @@ export async function createAiTeamService({ store, vectorMemory, verifyToken, po
     const publicDiscovery=new Set(['initialize','ping','tools/list','resources/list','prompts/list']);
     let auth=await authenticate(req,authConfig,verifyToken);
     if(auth.mode==='denied'&&(publicDiscovery.has(parsed?.method)||publicUiRead))auth={mode:'anonymous',scopes:[]};
+    if(auth.mode!=='oauth'&&tooMany(res,clientKey(req)))return;
     if(auth.mode==='denied')return res.writeHead(401,{'content-type':'application/json','www-authenticate':challengeHeader(metadataUrl,{error:auth.error,description:auth.description,scope:SCOPES.read})}).end(JSON.stringify({error:auth.error,error_description:auth.description}));
     if(needsAuth&&auth.mode!=='oauth'){const scope=called?TOOL_SCOPES[called]:SCOPES.read;return res.writeHead(401,{'content-type':'application/json','www-authenticate':challengeHeader(metadataUrl,{error:'invalid_token',description:'OAuth authorization is required for tenant data',scope})}).end(JSON.stringify({error:'invalid_token'}));}
     if(called&&TOOL_SCOPES[called]&&!hasScope(auth,TOOL_SCOPES[called]))return res.writeHead(403,{'content-type':'application/json','www-authenticate':challengeHeader(metadataUrl,{error:'insufficient_scope',description:`${TOOL_SCOPES[called]} is required`,scope:TOOL_SCOPES[called]})}).end(JSON.stringify({error:'insufficient_scope'}));
