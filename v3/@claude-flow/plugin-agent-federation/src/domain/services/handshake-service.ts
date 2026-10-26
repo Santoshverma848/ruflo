@@ -103,6 +103,12 @@ export class HandshakeService {
       return { success: false, error: 'Unknown or expired challenge' };
     }
 
+    // A response answers one challenge, issued to one node: it cannot be replayed by another.
+    if (pending.challenge.targetNodeId !== remoteNode.nodeId) {
+      this.pendingChallenges.delete(response.challengeId);
+      return { success: false, error: 'Response is not from the node that was challenged' };
+    }
+
     if (Date.now() > pending.expiresAt) {
       this.pendingChallenges.delete(response.challengeId);
       return { success: false, error: 'Challenge expired' };
