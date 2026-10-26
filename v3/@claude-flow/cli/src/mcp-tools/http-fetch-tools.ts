@@ -70,10 +70,35 @@ export function validateUrl(rawUrl: string): URL {
 
 function isPrivateOrLoopback(host: string): boolean {
   if (host === 'localhost' || host === 'localhost.localdomain') return true;
-  // IPv6 loopback
-  if (host === '::1' || host === '[::1]') return true;
+
+  // Node's URL parser keeps brackets in `.hostname` for every IPv6 literal
+  // (e.g. "[::1]", "[fc00::1]", "[::ffff:7f00:1]"). Strip them once so every
+  // check below operates on the bare address — without this, the fc00::/7
+  // and fe80::/10 checks further down never match anything (they test
+  // `startsWith('fc'/'fe80:')` against a string starting with "["), and an
+  // IPv4-mapped-IPv6 literal (`::ffff:a.b.c.d`, which Node normalizes to a
+  // canonical `::ffff:xxxx:yyyy` hex form) sails through both the IPv4 and
+  // IPv6 branches untested — a live SSRF bypass (e.g. `::ffff:127.0.0.1` or
+  // `::ffff:169.254.169.254` reaching loopback / cloud-metadata targets).
+  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+
+  if (bare === '::1') return true; // IPv6 loopback
+
+  // IPv4-mapped IPv6 — decode back to dotted-decimal and recurse into the
+  // IPv4 check below so it inherits every existing private/loopback/
+  // link-local/CGNAT rule instead of needing its own copy.
+  const mappedHex = bare.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    const decoded = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateOrLoopback(decoded);
+  }
+  const mappedDecimal = bare.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mappedDecimal) return isPrivateOrLoopback(mappedDecimal[1]);
+
   // IPv4 numeric checks
-  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const m = bare.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const a = Number(m[1]);
     const b = Number(m[2]);
@@ -86,10 +111,16 @@ function isPrivateOrLoopback(host: string): boolean {
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
     return false;
   }
-  // IPv6 bracketed addresses and other special forms — be conservative and
-  // accept only public-looking literals. Reject obvious private/local forms.
-  if (host.startsWith('fc') || host.startsWith('fd')) return true;  // fc00::/7 ULA
-  if (host.startsWith('fe80:')) return true;                        // link-local
+  // IPv6 special forms — be conservative and accept only public-looking
+  // literals. Reject obvious private/local forms.
+  if (bare.startsWith('fc') || bare.startsWith('fd')) return true;  // fc00::/7 ULA
+  if (bare.startsWith('fe80:')) return true;                        // link-local
+  // KNOWN LIMITATION (pre-existing, not introduced by the bracket-stripping /
+  // IPv4-mapped-IPv6 fix above; flagged by an independent adversarial review):
+  // `::` (IPv6 unspecified/"any", the analog of 0.0.0.0, which the IPv4 branch
+  // above does block), IPv6 multicast (ff00::/8), and NAT64 (64:ff9b::/96) are
+  // not covered. Left as a follow-up hardening item rather than scope-creeping
+  // this patch.
   return false;
 }
 
