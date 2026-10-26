@@ -11,9 +11,11 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, appendFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
+
+import { roomLogPath } from '../src/mcp-tools/agentbbs-federation.js';
 
 import {
   agentbbsTools,
@@ -93,6 +95,15 @@ describe('agentbbs MCP tools — structural contract', () => {
     const register = findTool('federation_bbs_register');
     for (const roomLabel of ['#../../../escaped-by-label', 'a/../../x', '..']) {
       await expect(register.handler({ roomLabel })).rejects.toThrow(/must not contain \.\./);
+    }
+  });
+
+  it('roomLogPath keeps the log inside basePath whatever roomId reaches it', () => {
+    const base = resolve(tmpdir(), 'bbs-base');
+    expect(roomLogPath(base, 'sales')).toBe(join(base, 'room-sales.jsonl'));
+    // `../x` alone stays inside (`room-../x.jsonl`); these resolve outside.
+    for (const roomId of ['a/../../x', 'x/../../../../etc/passwd']) {
+      expect(() => roomLogPath(base, roomId)).toThrow(/escapes basePath/);
     }
   });
 

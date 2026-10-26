@@ -52,7 +52,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
@@ -169,8 +169,18 @@ function peersPath(basePath: string): string {
   return join(basePath, 'peers.json');
 }
 
-function roomLogPath(basePath: string, roomId: string): string {
-  return join(basePath, `room-${roomId}.jsonl`);
+/**
+ * A room's log file, checked to stay inside basePath whatever roomId reaches
+ * here. The check is on the path string: it does not follow symlinks.
+ */
+export function roomLogPath(basePath: string, roomId: string): string {
+  const base = resolve(basePath);
+  const logPath = resolve(base, `room-${roomId}.jsonl`);
+  const rel = relative(base, logPath);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error('room log path escapes basePath');
+  }
+  return logPath;
 }
 
 /**
