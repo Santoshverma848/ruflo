@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.49.4 — 2026-10-26
+- fix: creating a mission no longer fails on Windows with "The command line is too long." The plan (about 7 KB, with about 750 quotes) was passed as one `mcp exec -p` argument, which passes cmd.exe's 8191-character line once Windows argv quoting escapes it; the goal's length did not matter. The plan now goes in a file under `.claude-flow/missions/` and is submitted with `ruflo mission plan --plan-file` (same service and answer as `mission_plan`). It is the same on every platform: the file is written through `write-via` (the host file API on Windows).
+
 ## 0.49.3 — 2026-10-25
 - fix: the install record for a plugin installed more than once no longer comes from another project (#4496). With no record for this folder and no user-scope record the console now reports "not installed here" instead of showing the first record's version and install folder, and among records that apply the one with the longest `projectPath` wins, so a record for the exact project beats one for a parent folder.
 
