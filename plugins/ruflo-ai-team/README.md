@@ -4,6 +4,28 @@ RuFlo AI Team is a separate, multi-tenant MCP service and Claude plugin. It turn
 
 The public v0.1 surface coordinates work; it does not silently send messages, deploy software, execute shell commands, make purchases, or approve consequential actions. Claude Code and Cowork agents use the service as a shared control plane while the user remains the authority for external effects.
 
+## Setup: connect the service first
+
+The plugin ships skills, commands and agents, but all team state lives in the hosted RuFlo AI Team service. **Nothing works until you connect it.**
+
+1. Install the plugin (Customize → Plugins → ruflo-ai-team, or `/plugin install ruflo-ai-team` in Claude Code).
+2. Open **Customize → Connectors** and find **ruflo-ai-team** (`https://team.ruv.io/mcp`). Choose **Connect**.
+3. Sign in on the OAuth page and approve the requested scopes. Your tenant is derived from your sign-in; you never enter a tenant ID.
+4. Start a new conversation and run `/team-start <goal>`. If the connector is working, Claude lists the team templates before proposing a plan.
+
+In Claude Code, run `/mcp` and authenticate **ruflo-ai-team** if it shows "needs authentication".
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Skills load but Claude says the tools are unavailable | Connector not connected | Customize → Connectors → connect **ruflo-ai-team** |
+| 401 or "authorization required" mid-session | Sign-in expired or scope not granted | Disconnect, reconnect, approve all scopes |
+| Tools appear but return nothing for a team you created elsewhere | Different account signed in | Teams are tenant-isolated; sign in with the same account |
+| Memory search reports `degraded: true` | Lexical fallback is active | Expected by default; results are keyword matches, not semantic |
+
+Without the connector, Claude is instructed to stop and ask you to connect it rather than pretend to run a team.
+
 ## Architecture
 
 - OAuth 2.1 resource server with RFC 9728 discovery and issuer/audience/scope verification.
