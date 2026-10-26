@@ -5,6 +5,16 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.3] - 2026-10-26
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.3, plus standalone `@claude-flow/mcp` 3.1.3 and `@claude-flow/plugin-agent-federation` 1.0.2. Security fixes from a private report.
+
+### Security
+
+- A cloned project's config can no longer turn on AI workers: `daemon.aiWorkers.enabled` is honoured only from the `--headless` flag, `RUFLO_DAEMON_AI_WORKERS=1` or `~/.claude-flow/config.json`; a project file can only say `false`. The audit worker no longer globs `**/.env*` (#4509). If you relied on a project file to enable AI workers, move the setting to your user config.
+- `@claude-flow/mcp` 3.1.3: HTTP and WebSocket transports with no token now refuse requests and upgrades from a web page (any `Origin` not listed by exact name; `*` does not count) or with a non-loopback `Host`, and refuse to listen beyond loopback without a token unless `allowUnauthenticated` is set (#4510). A local process can still call a token-less loopback server; set a token.
+- `@claude-flow/plugin-agent-federation` 1.0.2: a policy denial of `task-assignment`, `memory-query`, `context-share`, `trust-change`, `topology-change`, `agent-spawn`, `claim-event` or `agent-handoff` is final in `legacy` and `observe` mode too, and an evaluator error refuses them (#4511). Still open: the listener defaults to `0.0.0.0`, and discovery manifests are verified against their own key.
+
 ## [3.63.2] - 2026-10-26
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.2. No leaf package published.
