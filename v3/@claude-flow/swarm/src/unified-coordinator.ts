@@ -982,8 +982,17 @@ export class UnifiedSwarmCoordinator extends EventEmitter implements IUnifiedSwa
         agent.currentTask = undefined;
         agent.status = 'idle';
 
-        // Re-assign
-        this.assignTask(task);
+        // Re-assign. The failed agent is idle now, so assignTask() may hand
+        // the retry back to this same agent (keep its pool reservation) or to
+        // a different available agent. In the latter case the original domain
+        // reservation must be released, or that pool slot stays busy forever.
+        void this.assignTask(task).then(nextAgent => {
+          if (nextAgent?.id.id !== agentId) {
+            void this.releaseDomainAgent(agentId);
+          }
+        }).catch(() => {
+          void this.releaseDomainAgent(agentId);
+        });
       } else {
         task.status = 'failed';
         agent.status = 'idle';
