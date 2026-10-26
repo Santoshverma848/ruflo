@@ -5,6 +5,18 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.4] - 2026-10-26
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.4, plus standalone `@claude-flow/mcp` 3.1.4, `@claude-flow/plugin-agent-federation` 1.0.3 and `@claude-flow/shared` 3.0.6. Follow-ups to the 3.63.3 security fixes.
+
+### Security
+
+- `mcp start -t http|websocket` with no token now uses a per-user token in `~/.claude-flow/mcp-http-token` (mode 0600, created on first use), so a loopback server is no longer open to every local process. Set `RUFLO_MCP_ALLOW_UNAUTHENTICATED_HTTP=1` to run without one. The standalone WebSocket transport now checks the token when the connection upgrades (`Authorization: Bearer` or `?token=`), and `--auth-token` works with it (#4516). **Breaking:** HTTP/WebSocket clients must send the token.
+- Federation: `VERIFIED` and `ATTESTED` trust now require the key pinned for the peer in the `trustedPeerKeys` config (node id to hex public key); a self-signed manifest or a handshake response only proves possession of the key it carries. A handshake response must come from the node that was challenged, the listener defaults to `127.0.0.1`, and nonces use crypto randomness (#4514). **Breaking:** peers that relied on self-asserted trust need a `trustedPeerKeys` entry.
+- A file in `.claude-flow/daemon-queue/` no longer counts as a manual trigger, so it cannot skip the supervisor gate (#4515).
+- `@claude-flow/shared` 3.0.6 carries the same Origin/Host guard and WebSocket token check as `@claude-flow/mcp` (#4517).
+- AgentBBS: a `..` in a room label can no longer move the room log outside its base path (#4518).
+
 ## [3.63.3] - 2026-10-26
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.3, plus standalone `@claude-flow/mcp` 3.1.3 and `@claude-flow/plugin-agent-federation` 1.0.2. Security fixes from a private report.
