@@ -330,7 +330,7 @@ Provide a JSON report with:
       sandbox: 'strict',
       model: 'haiku',
       outputFormat: 'json',
-      contextPatterns: ['**/*.ts', '**/*.js', '**/.env*', '**/package.json'],
+      contextPatterns: ['**/*.ts', '**/*.js', '**/package.json'],
       timeoutMs: 5 * 60 * 1000,
     },
   },

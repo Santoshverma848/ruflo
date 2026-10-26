@@ -14,7 +14,7 @@
 import { ConfigFileManager } from './config-file-manager.js';
 import { EventEmitter } from 'events';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, unlinkSync, renameSync } from 'fs';
-import { cpus } from 'os';
+import { cpus, homedir } from 'os';
 import { join } from 'path';
 import { createRequire } from 'node:module';
 import { writeFileAtomic } from '../fs-secure.js';
@@ -235,6 +235,19 @@ function readEnvSecsAsMs(name: string, defaultMs: number): number {
 /**
  * Worker Daemon - Manages background workers with Node.js
  */
+/** `daemon.aiWorkers.enabled` from the USER-level config only (never the project's). */
+function readUserAiWorkersOptIn(): boolean | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(join(homedir(), '.claude-flow', 'config.json'), 'utf-8'));
+    const nested = raw?.daemon?.aiWorkers?.enabled;
+    const dotted = raw?.['daemon.aiWorkers.enabled'];
+    const v = nested ?? dotted;
+    return typeof v === 'boolean' ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class WorkerDaemon extends EventEmitter {
   private config: DaemonConfig;
   private workers: Map<WorkerType, WorkerState> = new Map();
@@ -342,9 +355,15 @@ export class WorkerDaemon extends EventEmitter {
       // #2661 — AI workers are opt-in: flag > config.json > env > OFF.
       // Deliberately NOT restored from daemon-state.json (initializeWorkerStates
       // whitelist) so a stale state file can never resurrect consent.
+      // SECURITY: the project's own config file is repo content and may come
+      // from a clone, so it can never switch AI workers on. Only the flag, the
+      // env var, or the user-level ~/.claude-flow/config.json can.
+      // A project file may still say `false` (it can only make this safer).
       aiWorkersEnabled: config?.aiWorkersEnabled
-        ?? fileConfig.aiWorkersEnabled
-        ?? (process.env.RUFLO_DAEMON_AI_WORKERS === '1'),
+        ?? (fileConfig.aiWorkersEnabled === false ? false : undefined)
+        ?? (process.env.RUFLO_DAEMON_AI_WORKERS === '1' ? true : undefined)
+        ?? readUserAiWorkersOptIn()
+        ?? false,
       workers: (config?.workers ?? DEFAULT_WORKERS).map(worker => ({ ...worker })),
       enabledWorkers: config?.enabledWorkers,
     };
@@ -398,7 +417,7 @@ export class WorkerDaemon extends EventEmitter {
     if (!this.config.aiWorkersEnabled) {
       this.log(
         'info',
-        'AI workers disabled (default) - all workers run local-only. Enable with `daemon start --headless`, daemon.aiWorkers.enabled=true, or RUFLO_DAEMON_AI_WORKERS=1 (#2661)'
+        'AI workers disabled (default) - all workers run local-only. Enable with `daemon start --headless`, daemon.aiWorkers.enabled=true in ~/.claude-flow/config.json (a project config cannot enable it), or RUFLO_DAEMON_AI_WORKERS=1 (#2661)'
       );
       return;
     }
