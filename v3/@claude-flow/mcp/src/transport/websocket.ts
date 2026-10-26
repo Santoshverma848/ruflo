@@ -298,6 +298,9 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
     const digest = (v: string) => createHash('sha256').update(v, 'utf8').digest();
     let ok = false;
     for (const valid of this.config.auth?.tokens ?? []) {
+      // An unset entry (e.g. `tokens: [process.env.X]` with X unset) matches nothing;
+      // hashing it would throw inside verifyClient on any upgrade carrying a token.
+      if (typeof valid !== 'string' || valid.length === 0) continue;
       if (timingSafeEqual(digest(given), digest(valid))) ok = true;
     }
     return ok;
