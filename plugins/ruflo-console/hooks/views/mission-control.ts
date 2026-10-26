@@ -222,7 +222,6 @@ const flowRows = (ctx: Ctx): RenderElement[] => wrap(FLOW, Math.max(20, ctx.colu
  * project's (not picked, not handed to Claude, not in the prompt) until the person adopts them here or says they belong elsewhere.
  */
 function legacyRows(ctx: Ctx, legacy: readonly MissionRecord[]): RenderElement[] {
-  const n = legacy.length
   // The offer can mix missions from several projects, so each one is adopted or turned away on its own row.
   const offerRow = (m: MissionRecord) => row(ctx, [
     text(ctx, `   ${m.id.slice(4, 10)}  ${clip(m.objective, Math.max(16, ctx.columns - 36))} `, { dimColor: true }),
@@ -231,11 +230,20 @@ function legacyRows(ctx: Ctx, legacy: readonly MissionRecord[]): RenderElement[]
     button(ctx, `mc-legacy-dismiss-${m.id}`, ' not here ', () => ctx.act.mission.dismissLegacy(m.id)),
   ], `mc-legacy-${m.id}`)
 
+  // A mission that names this project came from the copy in the project folder (a file a cloned repository can ship); one that names none is from the old shared ledger.
+  const fromFolder = legacy.filter(m => m.cwd !== undefined)
+  const old = legacy.filter(m => m.cwd === undefined)
+  const group = (missions: readonly MissionRecord[], heading: string): RenderElement[] =>
+    missions.length === 0 ? [] : [
+      ...paragraph(ctx, heading, { color: THEME.warn }),
+      ...missions.slice(0, 5).map(offerRow),
+      ...(missions.length > 5 ? [text(ctx, `   … and ${missions.length - 5} more`, { dimColor: true })] : []),
+    ]
+
   return [
-    ...paragraph(ctx, ` ${n} mission${n === 1 ? '' : 's'} from before per-project storage, with no project recorded. Adopt one only if it was made in this project:`, { color: THEME.warn }),
-    ...legacy.slice(0, 5).map(offerRow),
-    ...(n > 5 ? [text(ctx, `   … and ${n - 5} more`, { dimColor: true })] : []),
-    ...(n > 1 ? [row(ctx, [text(ctx, '   '), button(ctx, 'mc-legacy-dismiss', ' none of these are this project\'s ', () => ctx.act.mission.dismissLegacy())], 'mc-legacy')] : []),
+    ...group(fromFolder, ` ${fromFolder.length} mission${fromFolder.length === 1 ? '' : 's'} found in this project's folder (.claude-flow/console/mission-ledger.json) but not in the console's own store. A cloned repo can ship that file, so adopt one only if you made it:`),
+    ...group(old, ` ${old.length} mission${old.length === 1 ? '' : 's'} from before per-project storage, with no project recorded. Adopt one only if it was made in this project:`),
+    ...(old.length > 1 ? [row(ctx, [text(ctx, '   '), button(ctx, 'mc-legacy-dismiss', ' none of these are this project\'s ', () => ctx.act.mission.dismissLegacy())], 'mc-legacy')] : []),
   ]
 }
 

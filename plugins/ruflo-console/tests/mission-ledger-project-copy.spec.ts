@@ -12,6 +12,8 @@ import { activeMission, adoptLegacy, ledgerKeyOf, loadLedger, mcOf, saveLedger }
 import { mirrorPathOf } from '../hooks/mission-ledger'
 import type { MissionRecord } from '../hooks/mission-types'
 import { newState, type State } from '../hooks/state'
+import type { Ctx } from '../hooks/views/common'
+import { missionControlView } from '../hooks/views/mission-control'
 
 const A = '/home/me/project-a'
 const B = '/home/me/project-b'
@@ -149,5 +151,34 @@ describe('mission ledger copy in the project', () => {
     const again = stateIn(A)
     await loadLedger(again, host)
     expect(mcOf(again).missions.has(ID_A)).toBe(true)
+  })
+
+  it('Mission Control words the two offers differently: from the project folder, and from before per-project storage', () => {
+    type El = { kind: string; props: Record<string, unknown> }
+    const node = (kind: string) => (props: Record<string, unknown>): El => ({ kind, props })
+    const kit = { Box: node('Box'), Text: node('Text'), Button: node('Button'), Input: node('Input') }
+    const flat = (el: unknown): El[] => {
+      const n = el as El
+      if (typeof n !== 'object' || n === null) return []
+      const kids = n.props.children
+      return [n, ...(Array.isArray(kids) ? kids.flatMap(flat) : typeof kids === 'object' ? flat(kids) : [])]
+    }
+    const act = new Proxy({ mission: new Proxy({}, { get: () => () => undefined }) }, { get: (t, key) => (key in t ? t[key as 'mission'] : () => undefined) })
+    const state = stateIn(A)
+    const ctx = { kit, state, nowMs: 5_000, columns: 120, pictures: new Map(), act, cards: false } as unknown as Ctx
+    const words = () => flat(missionControlView(ctx)).filter(n => n.kind === 'Text').map(n => String(n.props.children)).join('\n')
+
+    mcOf(state).legacy = [mission(ID_A, { cwd: A, objective: 'from the folder' })]
+    expect(words()).toContain("1 mission found in this project's folder")
+    expect(words()).toContain('A cloned repo can ship that file')
+    expect(words()).not.toContain('before per-project storage')
+
+    mcOf(state).legacy = [mission(ID_B, { objective: 'from the old ledger' })]
+    expect(words()).toContain('1 mission from before per-project storage')
+    expect(words()).not.toContain("found in this project's folder")
+
+    mcOf(state).legacy = [mission(ID_A, { cwd: A }), mission(ID_B)]
+    expect(words()).toContain("found in this project's folder")
+    expect(words()).toContain('from before per-project storage')
   })
 })
