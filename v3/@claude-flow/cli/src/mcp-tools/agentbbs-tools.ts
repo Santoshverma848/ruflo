@@ -36,7 +36,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
-import { resolve, isAbsolute, join } from 'node:path';
+import { resolve, isAbsolute, join, relative } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import type { MCPTool } from './types.js';
@@ -102,6 +102,11 @@ function validateRoomLabel(label: string): string {
   if (!/^[A-Za-z0-9_.\-:/@#]+$/.test(label)) {
     throw new Error('roomLabel may only contain [A-Za-z0-9_.\\-:/@#]');
   }
+  // The label becomes the roomId (see roomIdFromLabel), so it gets the same
+  // `..` rejection as validateRoomId.
+  if (label.includes('..')) {
+    throw new Error('roomLabel must not contain ..');
+  }
   return label;
 }
 
@@ -135,7 +140,15 @@ function roomIdFromLabel(label: string): string {
 }
 
 function roomLogPath(basePath: string, roomId: string): string {
-  return join(basePath, `room-${roomId}.jsonl`);
+  // Containment check independent of the validators: whatever reaches here,
+  // the log file stays inside basePath.
+  const base = resolve(basePath);
+  const logPath = resolve(base, `room-${roomId}.jsonl`);
+  const rel = relative(base, logPath);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error('room log path escapes basePath');
+  }
+  return logPath;
 }
 
 function roomsRegistryPath(basePath: string): string {

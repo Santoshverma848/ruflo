@@ -89,6 +89,13 @@ describe('agentbbs MCP tools — structural contract', () => {
     })).rejects.toThrow(/may only contain/);
   });
 
+  it('register rejects a roomLabel that would escape the .agentbbs dir (..)', async () => {
+    const register = findTool('federation_bbs_register');
+    for (const roomLabel of ['#../../../escaped-by-label', 'a/../../x', '..']) {
+      await expect(register.handler({ roomLabel })).rejects.toThrow(/must not contain \.\./);
+    }
+  });
+
   it('register accepts conventional #-prefixed room labels', async () => {
     // Even when agentbbs is missing we should validate inputs first OR degrade
     // — but the contract is: validation errors must surface as throws.
