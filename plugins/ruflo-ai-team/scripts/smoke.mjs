@@ -13,13 +13,13 @@ check('six skills',readdirSync(new URL('skills/',root),{withFileTypes:true}).fil
 check('four agents',readdirSync(new URL('agents/',root)).filter((name)=>name.endsWith('.md')).length===4);
 check('six commands',readdirSync(new URL('commands/',root)).filter((name)=>name.endsWith('.md')).length===6);
 const server=read('src/server.mjs');
-check('fourteen MCP tools',(server.match(/(?<![.\w])tool\('/g)||[]).length+(server.match(/mcp\.registerTool\('/g)||[]).length===14);
+check('fourteen MCP tools',(server.match(/mcp\.tool\('/g)||[]).length+(server.match(/mcp\.registerTool\('/g)||[]).length===14);
 check('explicit annotation factories',server.includes('readOnlyHint: true')&&server.includes('readOnlyHint: false')&&server.includes('destructiveHint: false')&&server.includes('idempotentHint:')&&server.includes('openWorldHint: false'));
 // surface-neutral content (0.3.0): no Claude Code namespaced tool names, no angle brackets, real names only
 const frontmatter=(text)=>{const m=text.match(/^---\n([\s\S]*?)\n---/);const o={};for(const line of (m?m[1]:"").split("\n")){const i=line.indexOf(": ");if(i>0)o[line.slice(0,i)]=line.slice(i+2)}return o};
 const names=(dir,file)=>readdirSync(new URL(dir,root),{withFileTypes:true}).filter((e)=>file?e.isDirectory():e.name.endsWith(".md")).map((e)=>file?`${dir}${e.name}/${file}`:`${dir}${e.name}`);
 const items=[...names("skills/","SKILL.md"),...names("commands/"),...names("agents/")];
-const serverTools=new Set([...server.matchAll(/(?:(?<![.\w])tool|mcp\.registerTool)\('([a-z_]+)'/g)].map((m)=>m[1]));
+const serverTools=new Set([...server.matchAll(/mcp\.(?:tool|registerTool)\('([a-z_]+)'/g)].map((m)=>m[1]));
 // annotation-review.md's own claim ("server tests compare the live tool list with this
 // classification") must be true: every live tool documented, nothing stale left behind.
 const annotationRows=read('annotation-review.md').split('\n').filter((l)=>l.startsWith('| `'));
