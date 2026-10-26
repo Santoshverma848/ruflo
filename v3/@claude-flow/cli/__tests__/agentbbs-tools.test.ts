@@ -277,3 +277,14 @@ describe('agentbbs — dedup + seq optimizations (ADR-164, PeerHello spam fix)',
     expect(lastPeerHelloMs(p)).toBe(Date.parse(t2));
   });
 });
+
+describe('room labels cannot climb out of the BBS directory (#4416 follow-up)', () => {
+  it('refuses a label containing ..', async () => {
+    const { agentbbsTools } = await import('../src/mcp-tools/agentbbs-tools.js');
+    const register = agentbbsTools.find((t) => /register/.test(t.name))!;
+    for (const roomLabel of ['..', '../x', '#a/../../b']) {
+      const result = await register.handler({ roomLabel } as never).catch((e: Error) => ({ error: e.message }));
+      expect(JSON.stringify(result), roomLabel).toContain('must not contain ..');
+    }
+  });
+});

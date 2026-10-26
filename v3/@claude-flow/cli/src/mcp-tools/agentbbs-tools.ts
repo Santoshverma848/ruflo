@@ -36,7 +36,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
-import { resolve, isAbsolute, join } from 'node:path';
+import { resolve, isAbsolute, join, relative } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import type { MCPTool } from './types.js';
@@ -102,6 +102,8 @@ function validateRoomLabel(label: string): string {
   if (!/^[A-Za-z0-9_.\-:/@#]+$/.test(label)) {
     throw new Error('roomLabel may only contain [A-Za-z0-9_.\\-:/@#]');
   }
+  // The label becomes part of the room id, and the room id part of a file name.
+  if (label.includes('..')) throw new Error('roomLabel must not contain ..');
   return label;
 }
 
@@ -135,7 +137,11 @@ function roomIdFromLabel(label: string): string {
 }
 
 function roomLogPath(basePath: string, roomId: string): string {
-  return join(basePath, `room-${roomId}.jsonl`);
+  validateRoomId(roomId);
+  const file = join(basePath, `room-${roomId}.jsonl`);
+  const rel = relative(resolve(basePath), resolve(file));
+  if (rel.startsWith('..') || isAbsolute(rel)) throw new Error('roomId escapes the BBS directory');
+  return file;
 }
 
 function roomsRegistryPath(basePath: string): string {
