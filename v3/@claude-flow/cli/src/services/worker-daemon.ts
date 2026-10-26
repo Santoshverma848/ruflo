@@ -1116,7 +1116,7 @@ export class WorkerDaemon extends EventEmitter {
       }
       try {
         this.log('info', `Dequeued ${trigger}${workerId ? ` (id=${workerId})` : ''} from MCP dispatch queue`);
-        await this.triggerWorker(trigger);
+        await this.triggerWorker(trigger, { manualTrigger: false });
       } catch (err) {
         this.log('warn', `Queued worker ${trigger} failed: ${(err as Error).message}`);
       } finally {
@@ -2161,7 +2161,7 @@ export class WorkerDaemon extends EventEmitter {
   /**
    * Manually trigger a worker
    */
-  async triggerWorker(type: WorkerType): Promise<WorkerResult> {
+  async triggerWorker(type: WorkerType, opts: { manualTrigger?: boolean } = {}): Promise<WorkerResult> {
     const workerConfig = this.config.workers.find(w => w.type === type);
     if (!workerConfig) {
       throw new Error(`Unknown worker type: ${type}`);
@@ -2176,7 +2176,9 @@ export class WorkerDaemon extends EventEmitter {
     // #2661 root-fix — an explicit manual trigger bypasses the repository-
     // supervisor gate (still budget/dedup-gated) — see runWorkerLogic()'s
     // doc comment.
-    return this.executeWorker(workerConfig, { manualTrigger: true });
+    // Only an operator's own `daemon trigger` is manual. A file in daemon-queue/ can come from a
+    // cloned repo, so queue runs pass `manualTrigger: false` and stay behind the supervisor gate.
+    return this.executeWorker(workerConfig, { manualTrigger: opts.manualTrigger ?? true });
   }
 
   /**
