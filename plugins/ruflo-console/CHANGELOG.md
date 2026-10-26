@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.49.5 — 2026-10-26
+- fix: a mission no longer disappears when the console runs from a different plugin store (for example loaded inline in one session and from the marketplace install in the next). The ledger is kept in the plugin's own host store, which is a separate file per plugin source, so the second store had no ledger for the project and Mission Control showed no mission. Each save now also writes a copy to `.claude-flow/console/mission-ledger.json` (the console's git-ignored folder), and a load that finds no ledger for the project in the store takes the missions recorded for this project back from that copy. A store that already has a ledger is left alone, another project's missions in the copy are ignored, and a host with no file API behaves as before.
+
 ## 0.49.4 — 2026-10-26
 - fix: creating a mission no longer fails on Windows with "The command line is too long." The plan (about 7 KB, with about 750 quotes) was passed as one `mcp exec -p` argument, which passes cmd.exe's 8191-character line once Windows argv quoting escapes it; the goal's length did not matter. The plan now goes in a file under `.claude-flow/missions/` and is submitted with `ruflo mission plan --plan-file` (same service and answer as `mission_plan`). It is the same on every platform: the file is written through `write-via` (the host file API on Windows).
 
