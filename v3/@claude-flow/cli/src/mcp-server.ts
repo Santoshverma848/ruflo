@@ -1147,6 +1147,7 @@ export class MCPServerManager extends EventEmitter {
         auth: authToken
           ? { enabled: true, method: 'token', tokens: [authToken] }
           : undefined,
+        allowUnauthenticated: isUnauthenticatedHttpAllowed(),
       },
       logger
     );

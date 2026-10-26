@@ -6,7 +6,8 @@
 
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket, RawData } from 'ws';
-import { createServer, Server } from 'http';
+import { createServer, Server, type IncomingMessage } from 'http';
+import { assertSafeBind, refuseOpenRequest } from './guard.js';
 import type {
   ITransport,
   TransportType,
@@ -29,6 +30,10 @@ export interface WebSocketTransportConfig {
   heartbeatTimeout?: number;
   maxMessageSize?: number;
   auth?: AuthConfig;
+  /** Accept a non-loopback bind (this transport has no token check at all). */
+  allowUnauthenticated?: boolean;
+  /** Browser origins allowed to connect, by exact name. */
+  allowedOrigins?: string[];
   enableBinaryMode?: boolean;
 }
 
@@ -77,6 +82,8 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
       path: this.config.path || '/ws',
     });
 
+    assertSafeBind(this.config.host, false, this.config.allowUnauthenticated);
+
     this.server = createServer((req, res) => {
       res.writeHead(426, { 'Content-Type': 'text/plain' });
       res.end('Upgrade Required - WebSocket connection expected');
@@ -87,6 +94,8 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
       path: this.config.path || '/ws',
       maxPayload: this.config.maxMessageSize || 10 * 1024 * 1024,
       perMessageDeflate: true,
+      // This transport has no token, so it refuses web pages and rebound hostnames.
+      verifyClient: (info: { req: IncomingMessage }) => refuseOpenRequest(info.req, this.config.host, this.config.allowedOrigins) === undefined,
     });
 
     this.setupWebSocketHandlers();
