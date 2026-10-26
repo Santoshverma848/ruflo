@@ -59,7 +59,8 @@ export const mirrorPathOf = (cwd: string): string => under(cwd, '.claude-flow/co
 
 /** Best effort: a refused write leaves the host store as the only copy, as before. */
 async function writeMirror(state: State, host: Host, saved: unknown): Promise<void> {
-  if (state.cwd === '') return
+  // An empty ledger (a project whose missions are only offered, not yet adopted) must not overwrite the copy those offers come from.
+  if (state.cwd === '' || (saved as { missions: unknown[] }).missions.length === 0) return
 
   try {
     const flavor = await writeFlavorReady()
@@ -178,27 +179,24 @@ export async function loadLedger(state: State, host: Host): Promise<void> {
     } else if (m.cwd === undefined && !mc.missions.has(m.id)) offered.set(m.id, m)
   }
 
+  // The host store has no ledger for this project at all (another store than the one that saved it). The project's copy is a file a cloned
+  // repository can ship, so its missions are only offered, never taken in unasked (#4254): nothing from it is trusted as the person's own, and
+  // its `active` is ignored. One yes (`adoptLegacy`) brings a mission back.
+  if (own === undefined) {
+    const copy = await readMirror(state, host)
+
+    if (state.cwd !== cwd) return
+
+    for (const m of savedMissions(copy)) if (isOurs(m) && !mc.missions.has(m.id)) offered.set(m.id, m)
+  }
+
   // 0.44.4 before review saved one `true` for the whole offer: it covered every mission offered then.
   for (const id of own?.legacyDismissed === true ? offered.keys() : dismissedIds(own?.legacyDismissed)) mc.legacyDismissed.add(id)
   mc.legacy = [...offered.values()].filter(m => !mc.legacyDismissed.has(m.id))
 
-  // The host store has no ledger for this project at all (another store than the one that saved it): take the project's copy back.
-  let isRestored = false
-  const copy = own === undefined ? await readMirror(state, host) : undefined
-
-  if (state.cwd !== cwd) return
-
-  for (const m of savedMissions(copy)) {
-    if (isOurs(m) && !mc.missions.has(m.id)) {
-      mc.missions.set(m.id, m)
-      isRestored = true
-    }
-  }
-
-  const active = own?.active ?? (isRestored ? copy?.active : undefined)
+  const active = own?.active
 
   if (typeof active === 'string' && mc.missions.has(active)) mc.active = active
-  if (isRestored) await writeLedger(state, host)
 
   // Written here before it leaves the shared ledger, and pruned only for what the write kept, so a mission is never in neither.
   if (claimed.length > 0) {
