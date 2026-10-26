@@ -5,6 +5,19 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.1] - 2026-10-25
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.1. No leaf package published (the swarm fixes below live in `@claude-flow/swarm`, which the CLI does not depend on).
+
+### Fixed
+
+- **ruflo-console 0.49.3**: the install record for a plugin installed more than once no longer comes from another project; with none applying the console says "not installed here", and the record with the longest `projectPath` wins (#4496, #4497). Also in this train: Windows path and autopilot guard fixes (0.49.1/0.49.2, #4490, #4491, #4494).
+- `flywheel run` skips the directory fsync on Windows so it can commit (#4492, #4493).
+- `federation_bbs_watch` pages forward from `sinceEnvelopeId` (#4480).
+- Managed agents refuse `.` and `..` resource ids and the guard reads common argument wrappers (`ruflo-agent` 0.4.1, #4478).
+- `ruflo-mods` 0.7.1 loads again (#4485, #4487).
+- Swarm (source only, unpublished): downgraded topology leaders wire only to the leader, consensus waits on events instead of polling, retries release the old domain slot (#4483, #4498, #4499).
+
 ## [3.63.0] - 2026-10-25
 
 Minor release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.0. Adds four MCP tools for Anthropic Claude Managed Agents (`managed_agent_capabilities`, `managed_agent_control`, `managed_agent_learning`, `managed_agent_interrupt`). No leaf package changed, so no standalone publishes.
