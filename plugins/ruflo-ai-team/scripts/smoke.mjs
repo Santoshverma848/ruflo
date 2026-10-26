@@ -12,6 +12,8 @@ check('ADR proposed',read('docs/adrs/0001-multitenant-service-boundary.md').incl
 check('six skills',readdirSync(new URL('skills/',root),{withFileTypes:true}).filter((entry)=>entry.isDirectory()).length===6);
 check('four agents',readdirSync(new URL('agents/',root)).filter((name)=>name.endsWith('.md')).length===4);
 check('four commands',readdirSync(new URL('commands/',root)).filter((name)=>name.endsWith('.md')).length===4);
+check('README connector setup',read('README.md').includes('Setup: connect the service first'));
+for(const n of readdirSync(new URL('skills/',root)))check('skill connector note '+n,read('skills/'+n+'/SKILL.md').includes('Before you start: the connector'));
 const server=read('src/server.mjs');
 check('twelve MCP tools',(server.match(/mcp\.tool\('/g)||[]).length===12);
 check('explicit annotation factories',server.includes('readOnlyHint: true')&&server.includes('readOnlyHint: false')&&server.includes('destructiveHint: false')&&server.includes('idempotentHint:')&&server.includes('openWorldHint: false'));
