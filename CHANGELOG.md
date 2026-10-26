@@ -5,6 +5,19 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.2] - 2026-10-26
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.2. No leaf package published.
+
+### Security
+
+- `http_fetch` no longer lets IPv6 literals past its SSRF guard: brackets are stripped before matching, so the `fc00::/7` and `fe80::/10` checks now work, and IPv4-mapped forms such as `::ffff:127.0.0.1` and `::ffff:169.254.169.254` are decoded and checked against the IPv4 rules (#4503, #4504). Still open: `::`, multicast and NAT64 ranges, and redirect re-validation.
+
+### Fixed
+
+- **ruflo-console 0.49.4**: the mission plan is submitted from a file, which fixes "command line is too long" on Windows (#4506).
+- CI gates helper sync on import and manifest checks (#4507).
+
 ## [3.63.1] - 2026-10-25
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.1. No leaf package published (the swarm fixes below live in `@claude-flow/swarm`, which the CLI does not depend on).
