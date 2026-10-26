@@ -7,6 +7,7 @@
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { createServer, Server, type IncomingMessage } from 'http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { assertSafeBind, refuseOpenRequest } from './guard.js';
 import type {
   ITransport,
@@ -82,7 +83,7 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
       path: this.config.path || '/ws',
     });
 
-    assertSafeBind(this.config.host, false, this.config.allowUnauthenticated);
+    assertSafeBind(this.config.host, this.config.auth?.enabled === true, this.config.allowUnauthenticated);
 
     this.server = createServer((req, res) => {
       res.writeHead(426, { 'Content-Type': 'text/plain' });
@@ -95,7 +96,10 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
       maxPayload: this.config.maxMessageSize || 10 * 1024 * 1024,
       perMessageDeflate: true,
       // This transport has no token, so it refuses web pages and rebound hostnames.
-      verifyClient: (info: { req: IncomingMessage }) => refuseOpenRequest(info.req, this.config.host, this.config.allowedOrigins) === undefined,
+      verifyClient: (info: { req: IncomingMessage }) =>
+        this.config.auth?.enabled === true
+          ? this.upgradeHasValidToken(info.req)
+          : refuseOpenRequest(info.req, this.config.host, this.config.allowedOrigins) === undefined,
     });
 
     this.setupWebSocketHandlers();
@@ -242,7 +246,9 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
         lastActivity: new Date(),
         messageCount: 0,
         isAlive: true,
-        isAuthenticated: !this.config.auth?.enabled,
+        // With a token configured the upgrade itself was authenticated (verifyClient), so every
+        // connection that reaches here is; there is no later `authenticate` message to wait for.
+        isAuthenticated: true,
       };
 
       this.clients.set(clientId, client);
@@ -280,6 +286,21 @@ export class WebSocketTransport extends EventEmitter implements ITransport {
 
       this.emit('client:connected', clientId);
     });
+  }
+
+  /** Token from `Authorization: Bearer` or `?token=`, compared in constant time. */
+  private upgradeHasValidToken(req: IncomingMessage): boolean {
+    const header = req.headers.authorization;
+    const fromHeader = typeof header === 'string' ? header.match(/^Bearer\s+(.+)$/i)?.[1] : undefined;
+    const fromQuery = new URL(req.url ?? '', 'http://localhost').searchParams.get('token') ?? undefined;
+    const given = fromHeader ?? fromQuery;
+    if (!given) return false;
+    const digest = (v: string) => createHash('sha256').update(v, 'utf8').digest();
+    let ok = false;
+    for (const valid of this.config.auth?.tokens ?? []) {
+      if (timingSafeEqual(digest(given), digest(valid))) ok = true;
+    }
+    return ok;
   }
 
   private async handleMessage(client: ClientConnection, data: RawData): Promise<void> {

@@ -100,3 +100,25 @@ describe('listening beyond loopback', () => {
     expect(originAllowed('https://a.example', ['https://a.example'])).toBe(true);
   });
 });
+
+describe('the standalone WebSocket transport with a token', () => {
+  it('serves a client that presents it, and refuses one that does not or sends a wrong one', async () => {
+    const TOKEN = 'a-long-enough-token-1234';
+    const t = new WebSocketTransport(logger, { host: '127.0.0.1', port: 0, auth: { enabled: true, method: 'token', tokens: [TOKEN] } });
+    t.onRequest(async (r) => ({ jsonrpc: '2.0', id: r.id, result: { ok: true } }));
+    await t.start();
+    stop = () => t.stop();
+    const port = ((t as unknown as { server: Server }).server.address() as AddressInfo).port;
+    const url = `ws://127.0.0.1:${port}/ws`;
+    expect(await upgrades(url, {})).toBe(false);
+    expect(await upgrades(url, { authorization: 'Bearer wrong-wrong-wrong-wrong' })).toBe(false);
+    expect(await upgrades(`${url}?token=${TOKEN}`, {})).toBe(true);
+    const reply = await new Promise<unknown>((resolve, reject) => {
+      const ws = new WebSocket(url, { headers: { authorization: `Bearer ${TOKEN}` } });
+      ws.on('open', () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })));
+      ws.on('message', (m) => { resolve(JSON.parse(m.toString())); ws.close(); });
+      ws.on('error', reject);
+    });
+    expect(reply).toMatchObject({ id: 1, result: { ok: true } });
+  });
+});
