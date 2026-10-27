@@ -10,14 +10,42 @@
  * the candidate (verified via `git stash` isolation on `sona-manager.ts`,
  * `modes/base.ts`, `modes/balanced.ts`).
  *
- * Scope disclosure: these tests verify the EWC *state* (fisher/means/decay)
- * becomes real and data-dependent. They do NOT assert that the computed
- * penalty changes `learn()`'s returned `improvementDelta` — it doesn't;
- * `computeEWCPenalty()`'s result feeds a local `totalGradientNorm` that
- * `BalancedMode.learn()` already discarded before this change, a separate,
- * deeper, deliberately-not-fixed-tonight gap (matching the equally-stubbed
- * `consolidate()` placeholder in this monorepo's own reference pattern at
- * `plugins/cognitive-kernel/src/bridges/sona-bridge.ts`).
+ * Scope disclosure #1: these tests verify the EWC *state* (fisher/means/
+ * decay) becomes real and data-dependent. They do NOT assert that the
+ * computed penalty changes `learn()`'s returned `improvementDelta` — it
+ * doesn't; `computeEWCPenalty()`'s result feeds a local `totalGradientNorm`
+ * that `BalancedMode.learn()` already discarded before this change, a
+ * separate, deeper, deliberately-not-fixed-tonight gap (matching the
+ * equally-stubbed `consolidate()` placeholder in this monorepo's own
+ * reference pattern at
+ * `v3/plugins/cognitive-kernel/src/bridges/sona-bridge.ts`).
+ *
+ * Scope disclosure #2 (found by an independent adversarial-critic pass on
+ * this same candidate, same night): `getConsolidationSnapshot()` reports
+ * the CHANGE in `gradientAccumulator` since the last consolidation (a
+ * delta), not the raw cumulative accumulator, specifically so Fisher/means
+ * don't trivially diverge from squaring an ever-growing lifetime-cumulative
+ * value. That bounds THIS fix's own contribution per cycle — but it does
+ * NOT make `ewcState.fisher` bounded over an arbitrarily long session,
+ * because of a separate, pre-existing, NOT-fixed-tonight behavior one
+ * layer up: `SONAManager.triggerLearning()` re-processes every completed
+ * trajectory still held in `this.trajectories` on every call (nothing
+ * marks a trajectory "already learned from"; only `pruneTrajectories()`'s
+ * 50%-of-capacity threshold ever removes one) — so `BalancedMode.learn()`'s
+ * `for (const good of goodTrajectories)` loop, and therefore
+ * `gradientAccumulator`'s movement per `triggerLearning()` call, grows with
+ * the total historical backlog, not just what's new since the last cycle.
+ * Verified directly (outside this test file, via a traced standalone
+ * script) that `ewcState.means[0]` grows roughly linearly over 150
+ * synthetic cycles with a stationary periodic input, well past the ~10-30
+ * cycles `BalancedMode`'s own `beta=0.9` momentum EMA would need to settle
+ * on a bounded periodic orbit if each cycle only processed its own new
+ * trajectory. Fixing that backlog-reprocessing behavior is a distinct,
+ * larger-blast-radius change (touches trajectory lifecycle, not EWC) and is
+ * carried forward as a priority future-night candidate — it should likely
+ * be fixed BEFORE `computeEWCPenalty()` is ever wired into a real gradient
+ * update (scope disclosure #1), or that wiring would inherit this
+ * divergence too.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -83,16 +111,21 @@ describe('SONAManager EWC++ consolidation', () => {
     const valueAfter1 = after1.fisher.get(key)![0];
     expect(valueAfter1).toBeGreaterThan(0);
 
-    await runLearningCycle(manager, 'code', 1, 0.9); // identical seed -> identical fresh-Fisher magnitude
+    await runLearningCycle(manager, 'code', 1, 0.9);
     const after2 = decodeEwcState(manager);
     const valueAfter2 = after2.fisher.get(key)![0];
 
-    // decay(0.9) * valueAfter1 + freshFisher(== valueAfter1's own fresh contribution):
-    // strictly greater than a pure decay (0.9x) and strictly less than a naive
-    // sum-with-no-decay (2x) would be if decay were skipped entirely in the
-    // other direction — the real assertion that matters is monotonic growth
-    // under repeated same-magnitude evidence, which a permanently-empty map
-    // (the baseline) could never produce.
+    // The second cycle's fresh contribution is `decay(0.9) * valueAfter1 +
+    // freshFisher2`, where `freshFisher2` is itself strictly positive here
+    // (confirmed empirically: BalancedMode.learn() reprocesses ALL completed
+    // trajectories still held by the manager each cycle, so even a
+    // "repeated" trajectory adds a second data point and the accumulated
+    // gradient genuinely keeps moving). The property this test exists to
+    // demonstrate is simply: `fisher` is not fabricated-then-frozen or
+    // overwritten — a SECOND cycle changes it, in a way a permanently-empty
+    // map (the baseline) could never produce. This test does NOT claim
+    // fisher stays bounded over many cycles — see the module docstring's
+    // "Scope disclosure #2" for why it currently doesn't.
     expect(valueAfter2).toBeGreaterThan(valueAfter1 * 0.9);
     expect(after2.taskCount).toBe(after1.taskCount + 1);
   });
@@ -109,7 +142,14 @@ describe('SONAManager EWC++ consolidation', () => {
     expect(ewcState.taskCount).toBe(0);
   });
 
-  it('Fisher values equal means squared (diagonal empirical-Fisher construction), for every populated key', async () => {
+  it('on the FIRST learning cycle only, Fisher equals means squared (construction-time identity of getConsolidationSnapshot(), not an ongoing system invariant)', async () => {
+    // Flagged by an independent adversarial-critic pass: this identity holds
+    // by construction when there is no prior snapshot to diff against (the
+    // delta degenerates to the raw gradient), and it does NOT hold after a
+    // second cycle, once `means` is a true delta and `fisher` has already
+    // been through one decay+accumulate round in SONAManager. This test is
+    // intentionally scoped to that one case rather than described as a
+    // general property.
     const manager = createSONAManager('balanced');
     await manager.initialize();
 
