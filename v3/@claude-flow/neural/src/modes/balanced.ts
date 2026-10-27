@@ -296,4 +296,40 @@ export class BalancedMode extends BaseModeImplementation {
 
     return lambda * penalty * 0.5;
   }
+
+  /**
+   * Derive a Fisher-information/means snapshot from this mode's own
+   * accumulated gradients, for EWC consolidation.
+   *
+   * Uses the diagonal empirical-Fisher approximation (Fisher_i ~= gradient_i^2),
+   * the same style of estimator already proven out — for this exact
+   * squared-gradient-of-reward update rule — in this monorepo's own
+   * `plugins/cognitive-kernel/src/bridges/sona-bridge.ts::computeFisher()`.
+   * Non-finite gradient components are dropped (treated as zero) so a bad
+   * sample can't poison consolidated state.
+   */
+  getConsolidationSnapshot(): {
+    fisher: Map<string, Float32Array>;
+    means: Map<string, Float32Array>;
+  } {
+    const fisher = new Map<string, Float32Array>();
+    const means = new Map<string, Float32Array>();
+
+    for (const [key, gradient] of this.gradientAccumulator) {
+      const f = new Float32Array(gradient.length);
+      const m = new Float32Array(gradient.length);
+
+      for (let i = 0; i < gradient.length; i++) {
+        const g = gradient[i];
+        const safe = Number.isFinite(g) ? g : 0;
+        f[i] = safe * safe;
+        m[i] = safe;
+      }
+
+      fisher.set(key, f);
+      means.set(key, m);
+    }
+
+    return { fisher, means };
+  }
 }
