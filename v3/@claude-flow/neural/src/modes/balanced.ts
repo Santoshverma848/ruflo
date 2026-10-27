@@ -318,6 +318,10 @@ export class BalancedMode extends BaseModeImplementation {
    * is itself an EMA, so bounded), which is what `consolidateEWC()`'s decay
    * step is actually meant to decay against.
    *
+   * `means` is the accumulator itself at this point (the EWC anchor), so
+   * the penalty is zero immediately after consolidation and grows as the
+   * accumulator moves away from it.
+   *
    * Fisher uses the diagonal empirical-Fisher approximation
    * (Fisher_i ~= delta_i^2), the same style of estimator already proven out
    * — for this exact squared-gradient-of-reward update rule — in this
@@ -352,7 +356,10 @@ export class BalancedMode extends BaseModeImplementation {
       }
 
       fisher.set(key, f);
-      means.set(key, delta);
+      // EWC anchors on the parameter values at consolidation (theta*), not on
+      // the delta: computeEWCPenalty() measures current - means, which must be
+      // zero right after consolidating.
+      means.set(key, Float32Array.from(snapshot));
       this.lastConsolidationSnapshot.set(key, snapshot);
     }
 

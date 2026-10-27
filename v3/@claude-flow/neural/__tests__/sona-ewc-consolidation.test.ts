@@ -25,7 +25,8 @@
  * the CHANGE in `gradientAccumulator` since the last consolidation (a
  * delta), not the raw cumulative accumulator, specifically so Fisher/means
  * don't trivially diverge from squaring an ever-growing lifetime-cumulative
- * value. That bounds THIS fix's own contribution per cycle — but it does
+ * value; `means` is the accumulator at consolidation (the EWC anchor theta*,
+ * so the penalty restarts at zero). That bounds THIS fix's own contribution per cycle — but it does
  * NOT make `ewcState.fisher` bounded over an arbitrarily long session,
  * because of a separate, pre-existing, NOT-fixed-tonight behavior one
  * layer up: `SONAManager.triggerLearning()` re-processes every completed
@@ -142,11 +143,33 @@ describe('SONAManager EWC++ consolidation', () => {
     expect(ewcState.taskCount).toBe(0);
   });
 
+  it('anchors means on the accumulated parameters at consolidation, so the penalty restarts at zero', async () => {
+    const manager = createSONAManager('balanced');
+    await manager.initialize();
+
+    await runLearningCycle(manager, 'code', 1, 0.9);
+    await runLearningCycle(manager, 'code', 2, 0.8);
+
+    const ewcState = decodeEwcState(manager);
+    const accumulator = (manager as unknown as {
+      modeImpl: { gradientAccumulator: Map<string, Float32Array> };
+    }).modeImpl.gradientAccumulator;
+
+    expect(ewcState.means.size).toBeGreaterThan(0);
+    for (const [key, means] of ewcState.means) {
+      const current = accumulator.get(key)!;
+      expect(current).toBeDefined();
+      for (let i = 0; i < means.length; i++) {
+        expect(means[i]).toBeCloseTo(current[i], 6);
+      }
+    }
+  });
+
   it('on the FIRST learning cycle only, Fisher equals means squared (construction-time identity of getConsolidationSnapshot(), not an ongoing system invariant)', async () => {
     // Flagged by an independent adversarial-critic pass: this identity holds
     // by construction when there is no prior snapshot to diff against (the
     // delta degenerates to the raw gradient), and it does NOT hold after a
-    // second cycle, once `means` is a true delta and `fisher` has already
+    // second cycle, once `means` is the cumulative anchor and `fisher` has already
     // been through one decay+accumulate round in SONAManager. This test is
     // intentionally scoped to that one case rather than described as a
     // general property.
