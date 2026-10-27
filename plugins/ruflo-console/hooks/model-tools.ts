@@ -324,7 +324,7 @@ async function settlePending(deps: ModelToolDeps, tool: string, id: string, aske
     return { status: 'waiting', text: `Started: "${modelLine(pending.label, 100)}". It is still running after ${FINISH_MS / 1000} s; call console_state later to see the result.` }
   }
 
-  return { status: 'done', text: `${done === null ? 'Ran' : done.ok ? 'Done' : 'Failed'}: ${modelLine(pending.label, 100)}.${done === null ? '' : ` ${modelLine(done.detail, 200)}`}` }
+  return { status: 'done', text: `${done === null ? 'Ran' : done.queued === true ? 'Queued' : done.ok ? 'Done' : 'Failed'}: ${modelLine(pending.label, 100)}.${done === null ? '' : ` ${modelLine(done.detail, 200)}`}` }
 }
 
 /**
@@ -457,7 +457,7 @@ async function answer(name: string, input: Record<string, unknown>, deps: ModelT
     // A ruRE row's answer is the lab result's lines (not the outcome's): all of them, as the page keeps them (ADR-496).
     const body = rureOf(state, askedAt)?.lines ?? (done?.lines ?? []).slice(0, 12).map(line => modelLine(line, 160))
 
-    return done === null ? `Ran ${id}.` : `${done.ok ? 'Done' : 'Failed'}: ${modelLine(done.label, 100)}. ${modelLine(done.detail, 200)}${body.length > 0 ? `\n${body.join('\n')}` : ''}`
+    return done === null ? `Ran ${id}.` : `${done.queued === true ? 'Queued' : done.ok ? 'Done' : 'Failed'}: ${modelLine(done.label, 100)}. ${modelLine(done.detail, 200)}${body.length > 0 ? `\n${body.join('\n')}` : ''}`
   } catch (error) {
     say(state, name, name, 'error', error instanceof Error ? error.message : 'failed')
 
