@@ -2,7 +2,7 @@ import type { RenderElement } from 'claude-code'
 
 import { lifecycleOf, PHASE_NAME, PROFILES, RIGORS, stageOf } from '../goap'
 import { guidanceStatus } from '../mission-guidance'
-import { activeMission, derive, mcOf, nextTask, progressOf, rufloTaskOf, type Derived, type LedgerTask, type McTab, type MissionRecord } from '../mission-control'
+import { activeMission, derive, isOver, mcOf, nextTask, progressOf, rufloTaskOf, type Derived, type LedgerTask, type McTab, type MissionRecord } from '../mission-control'
 import { ACCENT, chip as inverseChip, TONE } from '../menu-colors'
 import { barCells, percentOf, stripStatus } from '../mission-strip'
 import { ago, button, clip, col, confirmHere, isBbs, paragraph, row, rule, section, text, THEME, wrap, type Ctx } from './common'
@@ -345,7 +345,7 @@ export function missionStrip(ctx: Ctx): RenderElement[] {
   const open = ctx.kit.Button({ key: 'menu-go-missions-top', label: ' (1) open Missions ', plain: true, onPress: () => ctx.act.view('missions') })
 
   // The goal field is always here, with or without an active mission: Enter plans the goal and opens Missions.
-  const field = box(ctx, 'menu-goal', '✎ goal', mission === null ? 'what do you want done? e.g. add a dark mode toggle to settings' : 'a new goal, planned in place of this one', 'plan', value => {
+  const field = box(ctx, 'menu-goal', '✎ goal', mission === null ? 'what do you want done? e.g. add a dark mode toggle to settings' : isOver(mission, ctx.state.snapshot?.tasks ?? []) ? 'a new goal: plan it, then create it as another mission' : 'a new goal, planned in place of this one', 'plan', value => {
     ctx.act.view('missions')
     m.goal(value)
   })
