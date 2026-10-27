@@ -83,7 +83,7 @@ jobs:
             // an empty dir with an empty cache took 2.3-3.1 s (all registry
             // round-trip) and added one package, versus 139 s / 377 packages for
             // a cold install of @claude-flow/cli itself. It is declared so
-            // the aidefence_* tools resolve under pnpm's isolated layout (#4445).
+            // the aidefence_* tools resolve under the pnpm isolated layout (#4445).
             // Removed per the guard escape clause documented above; the rest
             // of the list stands.
             const FORBIDDEN = [
