@@ -127,8 +127,8 @@ importers:
         specifier: 3.1.4
         version: link:../mcp
       '@claude-flow/neural':
-        specifier: 3.1.0
-        version: link:../neural
+        specifier: 3.0.0
+        version: 3.0.0(@types/node@20.19.27)(zod@3.25.76)
       '@claude-flow/plugin-agent-federation':
         specifier: 1.0.3
         version: link:../plugin-agent-federation
@@ -954,6 +954,53 @@ packages:
   /@borewit/text-codec@0.2.1:
     resolution: {integrity: sha512-k7vvKPbf7J2fZ5klGRD9AeKfUvojuZIQ3BT5u7Jfv+puwXkUBUT5PVyMDfJZpy30CBDXGMgw7fguK/lpOMBvgw==}
     requiresBuild: true
+
+  /@claude-flow/memory@3.0.9(@types/node@20.19.27)(zod@3.25.76):
+    resolution: {integrity: sha512-CTwe1JmjZbApnw0vqsWlDZj0EYxJrS1S+EOHPKZX/gEidaK/N/vyFS8XWLYxD7yDo5sMtcsh78VXdgq6c/0BBQ==}
+    cpu: [x64, arm64]
+    os: [darwin, linux, win32]
+    dependencies:
+      '@claude-flow/security': 3.0.5
+      agentdb: 3.0.0-alpha.20(@types/node@20.19.27)(zod@3.25.76)
+      sql.js: 1.14.1
+    optionalDependencies:
+      better-sqlite3: 12.9.0
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - '@metaharness/kernel'
+      - '@ruvector/diskann'
+      - '@ruvector/pi-brain'
+      - '@types/node'
+      - supports-color
+      - zod
+    dev: false
+
+  /@claude-flow/neural@3.0.0(@types/node@20.19.27)(zod@3.25.76):
+    resolution: {integrity: sha512-AEsuXXZSGqNVFQaVSn2XHBnDifkmJlcDm6xO3UyDo7vK0YpVJh0meCxO7T+EYDmuwmOlu0/M4e9VSgIlhT7ePQ==}
+    dependencies:
+      '@claude-flow/memory': 3.0.9(@types/node@20.19.27)(zod@3.25.76)
+      '@ruvector/sona': 0.1.5
+    optionalDependencies:
+      agentdb: 3.0.0-alpha.20(@types/node@20.19.27)(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - '@metaharness/kernel'
+      - '@ruvector/diskann'
+      - '@ruvector/pi-brain'
+      - '@types/node'
+      - supports-color
+      - zod
+    dev: false
+
+  /@claude-flow/security@3.0.5:
+    resolution: {integrity: sha512-6PoSCG+TD4nO5CZ85DNJUb+Dqo0dHE6lOuHAJMY29h9ejgqml98l+KDRhz2UV83kQNL4Fixruc4GLruvAYuk9w==}
+    dependencies:
+      '@noble/ed25519': 2.3.0
+      bcryptjs: 3.0.3
+      zod: 3.25.76
+    optionalDependencies:
+      '@napi-rs/keyring': 1.3.0
+    dev: false
 
   /@cognitum-one/sdk@0.2.1(multicast-dns@7.2.5):
     resolution: {integrity: sha512-ZIYKq6Tqc7zcDQRSrxphm0Uji497Mf1bi7azn2aTM4F0k+IEdPpTmAngGVaXX/hR7DYhOQ5gkUCja0DiOJLOJw==}
