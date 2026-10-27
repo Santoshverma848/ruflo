@@ -15,7 +15,7 @@
  *   - DEFAULT-REFUSES Authorization / Cookie / X-Auth-* (CLAUDE_FLOW_HTTP_FETCH_ALLOW_AUTH=1 opt-in)
  *   - hard timeout 30s default, 60s ceiling
  *   - response truncated to 256KB default, 1MB ceiling
- *   - no redirects auto-followed beyond fetch's default; status reported as-is
+ *   - redirects followed manually, max 10, every hop re-validated by the same allowlist
  *
  * @module @claude-flow/cli/mcp-tools/http-fetch
  */
@@ -26,6 +26,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024; // 256 KB
 const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB
+const MAX_REDIRECTS = 10;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const DEFAULT_USER_AGENT = 'ruflo-http-fetch/1.0';
 
 const FORBIDDEN_HEADER_PREFIXES = ['x-auth-', 'x-api-key'] as const;
@@ -264,13 +266,96 @@ export async function httpFetchExecute(input: Record<string, unknown>): Promise<
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(parsed.toString(), {
-      method,
-      headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : body,
-      signal: controller.signal,
-      // Keep redirect default ('follow') — caller sees final status/url.
-    });
+    let currentUrl = parsed;
+    let currentMethod = method;
+    let currentBody = body;
+    let response: Response;
+    let redirects = 0;
+
+    // Do not let fetch follow redirects on its own: only the initial URL was
+    // validated, so an automatic follow could reach loopback/RFC1918 or switch
+    // protocols after passing the allowlist. Every hop is validated with the
+    // same rules; sensitive headers are dropped when the origin changes.
+    while (true) {
+      response = await fetch(currentUrl.toString(), {
+        method: currentMethod,
+        headers,
+        body: currentMethod === 'GET' || currentMethod === 'HEAD' ? undefined : currentBody,
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+
+      if (!REDIRECT_STATUSES.has(response.status)) break;
+
+      const location = response.headers.get('location');
+      if (!location) break;
+
+      if (redirects++ >= MAX_REDIRECTS) {
+        try { await response.body?.cancel(); } catch { /* ignore */ }
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          headers: {},
+          body: '',
+          bodyTruncated: false,
+          bytesRead: 0,
+          durationMs: Date.now() - startedAt,
+          url: currentUrl.toString(),
+          method,
+          error: `too many redirects (max ${MAX_REDIRECTS})`,
+          errorCode: 'REDIRECT_LIMIT',
+        };
+      }
+
+      let nextUrl: URL;
+      try {
+        nextUrl = validateUrl(new URL(location, currentUrl).toString());
+      } catch (e) {
+        try { await response.body?.cancel(); } catch { /* ignore */ }
+        const err = e as HttpFetchValidationError;
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          headers: {},
+          body: '',
+          bodyTruncated: false,
+          bytesRead: 0,
+          durationMs: Date.now() - startedAt,
+          url: currentUrl.toString(),
+          method,
+          error: `redirect blocked: ${err.message}`,
+          errorCode: err.code ?? 'REDIRECT_BLOCKED',
+        };
+      }
+
+      // The redirect response body is not returned; release the connection
+      // before issuing the next request. A body-less 3xx is also fine.
+      try { await response.body?.cancel(); } catch { /* ignore */ }
+
+      if (nextUrl.origin !== currentUrl.origin) {
+        for (const key of Object.keys(headers)) {
+          const lower = key.toLowerCase();
+          if (lower === 'authorization' || lower === 'cookie' || lower === 'proxy-authorization') {
+            delete headers[key];
+          }
+        }
+      }
+
+      // Match fetch's redirect method rules: 303 becomes GET except for
+      // GET/HEAD, while 301/302 only rewrite POST to GET. 307/308 preserve
+      // both method and body.
+      if (
+        (response.status === 303 && currentMethod !== 'GET' && currentMethod !== 'HEAD') ||
+        ((response.status === 301 || response.status === 302) && currentMethod === 'POST')
+      ) {
+        currentMethod = 'GET';
+        currentBody = undefined;
+      }
+
+      currentUrl = nextUrl;
+    }
 
     // Drain the body with byte budget. Use array-buffer first to bound size
     // deterministically before decoding to UTF-8.
@@ -318,7 +403,7 @@ export async function httpFetchExecute(input: Record<string, unknown>): Promise<
       bodyTruncated,
       bytesRead,
       durationMs: Date.now() - startedAt,
-      url: parsed.toString(),
+      url: currentUrl.toString(),
       method,
     };
   } catch (e) {
