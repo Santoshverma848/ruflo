@@ -5,6 +5,24 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.5] - 2026-10-27
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.5, plus standalone `@claude-flow/neural` 3.0.1.
+
+### Security
+
+- `http_fetch` now validates every redirect target, not only the first URL. A public URL can no longer redirect to loopback, private ranges, cloud metadata or `file://`. Redirects are capped at 10 hops, and `Authorization`/`Cookie` headers are dropped on cross-origin hops (#4534).
+
+### Fixed
+
+- SONA EWC++: `SONAManager` now records Fisher importance and anchor values after each learning cycle; before, they were always empty. The anchor is the parameter value at consolidation, so the penalty starts at zero (#4531, #4532, `@claude-flow/neural` 3.0.1). The penalty is still not applied to the learning update.
+- `task_list` status filter matches status aliases (#4536).
+- Workflow condition steps can read an earlier step's output via `step-N.output` (#4530).
+- `task_summary` counts cancelled tasks, so the counts add up to the total (#4489).
+- `hooks_worker-status` summary counts pending workers (#4529).
+- `doctor` recognizes matching npm launchers on Windows (#4473).
+- ruflo-console 0.49.5 keeps a project copy of the mission ledger, so a mission survives a restart that loads the console from a different source (#4524).
+
 ## [3.63.4] - 2026-10-26
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.4, plus standalone `@claude-flow/mcp` 3.1.4, `@claude-flow/plugin-agent-federation` 1.0.3 and `@claude-flow/shared` 3.0.6. Follow-ups to the 3.63.3 security fixes.
