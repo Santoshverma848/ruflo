@@ -5,6 +5,16 @@ All notable changes to the Ruflo project (formerly Claude Flow) are documented h
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.63.6] - 2026-10-27
+
+Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.6.
+
+### Fixed
+
+- ruflo-console 0.49.7: Claude can clear Project Anatole alerts through the console again. Before, `console_run anatole-ack-<id>` failed with "command.run: called from a tool.call hook, it would wait on the turn this hook is holding", so every alert stayed open. The console now sends `/protector` without waiting inside Claude's tool call, and Claude's reply says the action is queued. The ack is applied when the turn ends (#4545).
+- `@claude-flow/aidefence` is declared as an optional dependency of the CLI (#4445).
+- The hooks-automation skill uses the `hooks` command and the real MCP tool names (#4538, #4540).
+
 ## [3.63.5] - 2026-10-27
 
 Patch release: `@claude-flow/cli`, `claude-flow`, `ruflo` 3.63.5, plus standalone `@claude-flow/neural` 3.0.1.
